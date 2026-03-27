@@ -17,10 +17,15 @@ impl Container {
         let db = init_db_pool(&config.database_url).await?;
         let redis = init_redis_pool(&config.redis_url).await?;
 
+        let repo = Arc::new(crate::modules::auth::infrastructure::persistence::PostgresAuthRepository::new(db.clone()));
+        let captcha = Arc::new(crate::infrastructure::security::captcha::NoOpCaptchaVerifier);
+        let auth_service = Arc::new(crate::modules::auth::application::service::AuthService::new(repo, captcha, redis.clone()));
+
         let state = Arc::new(AppState {
             config,
             db,
             redis,
+            auth_service,
         });
 
         info!("Application container built successfully.");

@@ -1,7 +1,8 @@
-mod bootstrap;
-mod infrastructure;
-mod router;
-mod shared;
+pub mod bootstrap;
+pub mod infrastructure;
+pub mod modules;
+pub mod router;
+pub mod shared;
 
 use crate::bootstrap::container::Container;
 use crate::router::create_router;

@@ -1,1 +1,14 @@
-.envtarget/
+# Environments
+.env
+
+# Build Artifacts
+**/target/
+**/target_migrate/
+**/.svelte-kit/
+**/node_modules/
+**/build/
+**.txt
+
+# OS
+.DS_Store
+Thumbs.db
