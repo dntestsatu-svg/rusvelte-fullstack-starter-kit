@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -48,12 +49,34 @@ impl From<String> for PaymentStatus {
     }
 }
 
+impl FromStr for PaymentStatus {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "created" => Ok(Self::Created),
+            "pending" => Ok(Self::Pending),
+            "success" => Ok(Self::Success),
+            "failed" => Ok(Self::Failed),
+            "expired" => Ok(Self::Expired),
+            _ => Err(format!("Invalid payment status: {value}")),
+        }
+    }
+}
+
+impl PaymentStatus {
+    pub fn is_final(&self) -> bool {
+        matches!(self, Self::Success | Self::Failed | Self::Expired)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Payment {
     pub id: Uuid,
     pub store_id: Uuid,
     pub created_by_user_id: Option<Uuid>,
     pub provider_name: String,
+    pub provider_terminal_id: Option<String>,
     pub provider_trx_id: Option<String>,
     pub provider_rrn: Option<String>,
     pub merchant_order_id: Option<String>,
@@ -78,6 +101,7 @@ pub struct NewPaymentRecord {
     pub store_id: Uuid,
     pub created_by_user_id: Option<Uuid>,
     pub provider_name: String,
+    pub provider_terminal_id: String,
     pub merchant_order_id: Option<String>,
     pub custom_ref: Option<String>,
     pub gross_amount: i64,
@@ -106,10 +130,193 @@ pub struct StoreProviderProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderWebhookKind {
+    Payment,
+    Payout,
+    Unknown,
+}
+
+impl Display for ProviderWebhookKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::Payment => "payment",
+            Self::Payout => "payout",
+            Self::Unknown => "unknown",
+        };
+
+        f.write_str(value)
+    }
+}
+
+impl From<String> for ProviderWebhookKind {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "payment" => Self::Payment,
+            "payout" => Self::Payout,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentWebhookStatus {
+    Success,
+    Failed,
+    Expired,
+}
+
+impl PaymentWebhookStatus {
+    pub fn to_payment_status(&self) -> PaymentStatus {
+        match self {
+            Self::Success => PaymentStatus::Success,
+            Self::Failed => PaymentStatus::Failed,
+            Self::Expired => PaymentStatus::Expired,
+        }
+    }
+}
+
+impl Display for PaymentWebhookStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::Success => "success",
+            Self::Failed => "failed",
+            Self::Expired => "expired",
+        };
+
+        f.write_str(value)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderWebhookEvent {
+    pub id: Uuid,
+    pub provider_name: String,
+    pub webhook_kind: ProviderWebhookKind,
+    pub merchant_id: Option<String>,
+    pub provider_trx_id: Option<String>,
+    pub partner_ref_no: Option<String>,
+    pub payload_json: serde_json::Value,
+    pub is_verified: bool,
+    pub verification_reason: Option<String>,
+    pub is_processed: bool,
+    pub processing_result: Option<String>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewProviderWebhookEventRecord {
+    pub id: Uuid,
+    pub provider_name: String,
+    pub webhook_kind: ProviderWebhookKind,
+    pub merchant_id: Option<String>,
+    pub provider_trx_id: Option<String>,
+    pub partner_ref_no: Option<String>,
+    pub payload_json: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaymentWebhookTarget {
+    pub payment: Payment,
+    pub store_name: String,
+    pub store_slug: String,
+    pub callback_url: Option<String>,
+    pub callback_secret: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingCallbackDelivery {
+    pub event_type: String,
+    pub target_url: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaymentWebhookFinalizeCommand {
+    pub webhook_event_id: Uuid,
+    pub payment_id: Uuid,
+    pub final_status: PaymentStatus,
+    pub provider_rrn: Option<String>,
+    pub provider_finished_at: Option<DateTime<Utc>>,
+    pub payload_json: serde_json::Value,
+    pub notification_type: String,
+    pub notification_title: String,
+    pub notification_body: String,
+    pub callback_delivery: Option<PendingCallbackDelivery>,
+    pub processed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentWebhookFinalizeOutcomeKind {
+    Finalized,
+    AlreadyFinal,
+    Invalid,
+    Ignored,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaymentWebhookFinalizeOutcome {
+    pub kind: PaymentWebhookFinalizeOutcomeKind,
+    pub payment: Option<Payment>,
+    pub notification_user_ids: Vec<Uuid>,
+    pub callback_enqueued: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DashboardPaymentSummary {
+    pub id: Uuid,
+    pub store_id: Uuid,
+    pub store_name: String,
+    pub store_slug: String,
+    pub gross_amount: i64,
+    pub platform_tx_fee_amount: i64,
+    pub store_pending_credit_amount: i64,
+    pub status: PaymentStatus,
+    pub provider_trx_id: Option<String>,
+    pub merchant_order_id: Option<String>,
+    pub custom_ref: Option<String>,
+    pub expired_at: Option<DateTime<Utc>>,
+    pub finalized_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DashboardPaymentDetail {
+    pub id: Uuid,
+    pub store_id: Uuid,
+    pub store_name: String,
+    pub store_slug: String,
+    pub provider_name: String,
+    pub provider_terminal_id: Option<String>,
+    pub provider_trx_id: Option<String>,
+    pub provider_rrn: Option<String>,
+    pub merchant_order_id: Option<String>,
+    pub custom_ref: Option<String>,
+    pub gross_amount: i64,
+    pub platform_tx_fee_bps: i32,
+    pub platform_tx_fee_amount: i64,
+    pub store_pending_credit_amount: i64,
+    pub status: PaymentStatus,
+    pub qris_payload: Option<String>,
+    pub expired_at: Option<DateTime<Utc>>,
+    pub provider_created_at: Option<DateTime<Utc>>,
+    pub provider_finished_at: Option<DateTime<Utc>>,
+    pub finalized_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClientPaymentDetail {
     pub id: Uuid,
     pub store_id: Uuid,
     pub provider_name: String,
+    pub provider_terminal_id: Option<String>,
     pub provider_trx_id: Option<String>,
     pub merchant_order_id: Option<String>,
     pub custom_ref: Option<String>,
@@ -196,6 +403,7 @@ pub fn payment_to_detail(payment: Payment) -> ClientPaymentDetail {
         id: payment.id,
         store_id: payment.store_id,
         provider_name: payment.provider_name,
+        provider_terminal_id: payment.provider_terminal_id,
         provider_trx_id: payment.provider_trx_id,
         merchant_order_id: payment.merchant_order_id,
         custom_ref: payment.custom_ref,

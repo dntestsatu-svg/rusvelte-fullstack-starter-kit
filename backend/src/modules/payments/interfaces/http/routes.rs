@@ -23,6 +23,19 @@ pub fn client_routes(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
+pub fn dashboard_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/", get(handlers::list_dashboard_payments))
+        .route("/:paymentId", get(handlers::get_dashboard_payment))
+        .with_state(state)
+}
+
+pub fn webhook_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/provider", post(handlers::provider_webhook))
+        .with_state(state)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
@@ -65,10 +78,13 @@ mod tests {
     };
     use crate::modules::payments::application::service::PaymentService;
     use crate::modules::payments::domain::entity::{
-        NewPaymentIdempotencyRecord, NewPaymentRecord, Payment, PaymentIdempotencyRecord,
-        PaymentIdempotencyStatus, PaymentPendingUpdate, PaymentStatus, StoreProviderProfile,
-        CLIENT_PAYMENT_CREATE_RATE_LIMIT,
+        DashboardPaymentDetail, DashboardPaymentSummary, NewPaymentIdempotencyRecord,
+        NewPaymentRecord, NewProviderWebhookEventRecord, Payment, PaymentIdempotencyRecord,
+        PaymentIdempotencyStatus, PaymentPendingUpdate, PaymentStatus,
+        StoreProviderProfile, CLIENT_PAYMENT_CREATE_RATE_LIMIT,
     };
+    use crate::modules::notifications::application::service::NotificationService;
+    use crate::modules::realtime::application::service::RealtimeService;
     use crate::modules::payments::domain::repository::{
         PaymentIdempotencyRepository, PaymentRepository,
     };
@@ -446,6 +462,7 @@ mod tests {
                 store_id: payment.store_id,
                 created_by_user_id: payment.created_by_user_id,
                 provider_name: payment.provider_name,
+                provider_terminal_id: Some(payment.provider_terminal_id),
                 provider_trx_id: None,
                 provider_rrn: None,
                 merchant_order_id: payment.merchant_order_id,
@@ -495,6 +512,73 @@ mod tests {
                 .get(&payment_id)
                 .filter(|payment| payment.store_id == store_id)
                 .cloned())
+        }
+
+        async fn list_dashboard_payments(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _search: Option<&str>,
+            _status: Option<&str>,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Vec<DashboardPaymentSummary>> {
+            Ok(vec![])
+        }
+
+        async fn count_dashboard_payments(
+            &self,
+            _search: Option<&str>,
+            _status: Option<&str>,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<i64> {
+            Ok(0)
+        }
+
+        async fn find_dashboard_payment_by_id(
+            &self,
+            _payment_id: Uuid,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Option<DashboardPaymentDetail>> {
+            Ok(None)
+        }
+
+        async fn find_payment_by_provider_trx_id(
+            &self,
+            _provider_name: &str,
+            _provider_trx_id: &str,
+        ) -> anyhow::Result<Option<crate::modules::payments::domain::entity::PaymentWebhookTarget>>
+        {
+            Ok(None)
+        }
+
+        async fn insert_provider_webhook_event(
+            &self,
+            _event: NewProviderWebhookEventRecord,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::ProviderWebhookEvent> {
+            unreachable!("unused in client payment route tests")
+        }
+
+        async fn mark_provider_webhook_event_result(
+            &self,
+            _event_id: Uuid,
+            _is_verified: bool,
+            _verification_reason: Option<&str>,
+            _is_processed: bool,
+            _processing_result: Option<&str>,
+            _processed_at: Option<chrono::DateTime<Utc>>,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::ProviderWebhookEvent> {
+            unreachable!("unused in client payment route tests")
+        }
+
+        async fn finalize_payment_from_webhook(
+            &self,
+            _command: crate::modules::payments::domain::entity::PaymentWebhookFinalizeCommand,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::PaymentWebhookFinalizeOutcome>
+        {
+            unreachable!("unused in client payment route tests")
         }
     }
 
@@ -677,6 +761,12 @@ mod tests {
         let payment_service = Arc::new(PaymentService::new(payment_repository.clone(), provider));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
+        let notification_service = Arc::new(NotificationService::new(Arc::new(
+            crate::modules::notifications::infrastructure::repository::SqlxNotificationRepository::new(
+                db.clone(),
+            ),
+        )));
+        let realtime_service = Arc::new(RealtimeService::new(64));
 
         let state = AppState {
             config: Config {
@@ -693,8 +783,10 @@ mod tests {
             db,
             redis: redis.clone(),
             auth_service,
+            notification_service,
             payment_idempotency_service,
             payment_service,
+            realtime_service,
             store_service,
             store_token_service: store_token_service.clone(),
             support_service,

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::Sha256;
 use sqlx::Error as SqlxError;
 use uuid::Uuid;
 
@@ -10,12 +13,16 @@ use crate::modules::payments::application::provider::{
 };
 use crate::modules::payments::domain::entity::{
     payment_to_detail, payment_to_status_view, ClientPaymentDetail, ClientPaymentStatusView,
-    NewPaymentRecord, PaymentPendingUpdate, PaymentStatus, StoreProviderProfile,
-    CLIENT_PAYMENT_MAX_EXPIRE_SECONDS, CLIENT_PAYMENT_MIN_EXPIRE_SECONDS, PAYMENT_PLATFORM_FEE_BPS,
-    PAYMENT_PROVIDER_NAME,
+    DashboardPaymentDetail, DashboardPaymentSummary, NewPaymentRecord,
+    NewProviderWebhookEventRecord, Payment, PaymentPendingUpdate, PaymentStatus,
+    PaymentWebhookFinalizeCommand, PaymentWebhookFinalizeOutcomeKind,
+    PaymentWebhookStatus, PendingCallbackDelivery, ProviderWebhookKind, StoreProviderProfile,
+    CLIENT_PAYMENT_MAX_EXPIRE_SECONDS, CLIENT_PAYMENT_MIN_EXPIRE_SECONDS,
+    PAYMENT_PLATFORM_FEE_BPS, PAYMENT_PROVIDER_NAME,
 };
 use crate::modules::payments::domain::repository::PaymentRepository;
 use crate::modules::store_tokens::domain::entity::StoreApiTokenAuthContext;
+use crate::shared::auth::{has_capability, AuthenticatedUser, Capability};
 use crate::shared::error::AppError;
 use crate::shared::money::payment_fee_breakdown;
 
@@ -33,6 +40,58 @@ pub struct NormalizedCreateClientPaymentRequest {
     pub expire_seconds: i64,
     pub custom_ref: Option<String>,
     pub merchant_order_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DashboardPaymentListFilters {
+    pub search: Option<String>,
+    pub status: Option<PaymentStatus>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProviderWebhookInput {
+    Payment(PaymentWebhookInput),
+    Payout(PayoutWebhookInput),
+    Unknown(UnknownWebhookInput),
+}
+
+#[derive(Debug, Clone)]
+pub struct PaymentWebhookInput {
+    pub merchant_id: String,
+    pub provider_trx_id: String,
+    pub terminal_id: String,
+    pub custom_ref: Option<String>,
+    pub rrn: Option<String>,
+    pub amount: i64,
+    pub status: PaymentWebhookStatus,
+    pub provider_created_at: Option<chrono::DateTime<Utc>>,
+    pub provider_finished_at: Option<chrono::DateTime<Utc>>,
+    pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct PayoutWebhookInput {
+    pub merchant_id: Option<String>,
+    pub partner_ref_no: Option<String>,
+    pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnknownWebhookInput {
+    pub merchant_id: Option<String>,
+    pub provider_trx_id: Option<String>,
+    pub partner_ref_no: Option<String>,
+    pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessProviderWebhookResult {
+    pub response_status: bool,
+    pub payment: Option<Payment>,
+    pub notification_user_ids: Vec<Uuid>,
+    pub publish_payment_event: bool,
+    pub publish_notification_event: bool,
+    pub callback_enqueued: bool,
 }
 
 impl CreateClientPaymentRequest {
@@ -100,6 +159,7 @@ impl PaymentService {
                 store_id: context.store_id,
                 created_by_user_id: None,
                 provider_name: PAYMENT_PROVIDER_NAME.to_string(),
+                provider_terminal_id: store_profile.provider_username.clone(),
                 merchant_order_id: request.merchant_order_id.clone(),
                 custom_ref: request.custom_ref.clone(),
                 gross_amount: request.amount,
@@ -168,6 +228,165 @@ impl PaymentService {
         Ok(payment_to_status_view(payment))
     }
 
+    pub async fn list_dashboard_payments(
+        &self,
+        limit: i64,
+        offset: i64,
+        filters: DashboardPaymentListFilters,
+        actor: &AuthenticatedUser,
+    ) -> Result<Vec<DashboardPaymentSummary>, AppError> {
+        ensure_any_payment_read(actor)?;
+        let (user_scope, global_access) = payment_scope(actor);
+
+        self.repository
+            .list_dashboard_payments(
+                limit,
+                offset,
+                filters.search.as_deref(),
+                filters.status.as_ref().map(|status| status.to_string()).as_deref(),
+                user_scope,
+                global_access,
+            )
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn count_dashboard_payments(
+        &self,
+        filters: DashboardPaymentListFilters,
+        actor: &AuthenticatedUser,
+    ) -> Result<i64, AppError> {
+        ensure_any_payment_read(actor)?;
+        let (user_scope, global_access) = payment_scope(actor);
+
+        self.repository
+            .count_dashboard_payments(
+                filters.search.as_deref(),
+                filters.status.as_ref().map(|status| status.to_string()).as_deref(),
+                user_scope,
+                global_access,
+            )
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn get_dashboard_payment(
+        &self,
+        payment_id: Uuid,
+        actor: &AuthenticatedUser,
+    ) -> Result<DashboardPaymentDetail, AppError> {
+        ensure_any_payment_read(actor)?;
+        let (user_scope, global_access) = payment_scope(actor);
+        let payment = self
+            .repository
+            .find_dashboard_payment_by_id(payment_id, user_scope, global_access)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Payment not found".into()))?;
+
+        Ok(payment)
+    }
+
+    pub async fn process_provider_webhook(
+        &self,
+        webhook: ProviderWebhookInput,
+        expected_merchant_id: &str,
+    ) -> Result<ProcessProviderWebhookResult, AppError> {
+        let now = Utc::now();
+
+        match webhook {
+            ProviderWebhookInput::Payment(payment) => {
+                self.process_payment_webhook(payment, expected_merchant_id, now)
+                    .await
+            }
+            ProviderWebhookInput::Payout(payout) => {
+                let event = self
+                    .repository
+                    .insert_provider_webhook_event(NewProviderWebhookEventRecord {
+                        id: Uuid::new_v4(),
+                        provider_name: PAYMENT_PROVIDER_NAME.to_string(),
+                        webhook_kind: ProviderWebhookKind::Payout,
+                        merchant_id: payout.merchant_id.clone(),
+                        provider_trx_id: None,
+                        partner_ref_no: payout.partner_ref_no.clone(),
+                        payload_json: payout.raw_payload,
+                        created_at: now,
+                    })
+                    .await?;
+
+                let is_verified = payout
+                    .merchant_id
+                    .as_deref()
+                    .map(|value| value == expected_merchant_id)
+                    .unwrap_or(false);
+                let verification_reason = if is_verified {
+                    None
+                } else {
+                    Some("Merchant id mismatch")
+                };
+                let processing_result = if is_verified {
+                    Some("payout_webhook_recorded")
+                } else {
+                    Some("invalid_payout_webhook")
+                };
+
+                self.repository
+                    .mark_provider_webhook_event_result(
+                        event.id,
+                        is_verified,
+                        verification_reason,
+                        true,
+                        processing_result,
+                        Some(now),
+                    )
+                    .await?;
+
+                Ok(ProcessProviderWebhookResult {
+                    response_status: is_verified,
+                    payment: None,
+                    notification_user_ids: vec![],
+                    publish_payment_event: false,
+                    publish_notification_event: false,
+                    callback_enqueued: false,
+                })
+            }
+            ProviderWebhookInput::Unknown(unknown) => {
+                let event = self
+                    .repository
+                    .insert_provider_webhook_event(NewProviderWebhookEventRecord {
+                        id: Uuid::new_v4(),
+                        provider_name: PAYMENT_PROVIDER_NAME.to_string(),
+                        webhook_kind: ProviderWebhookKind::Unknown,
+                        merchant_id: unknown.merchant_id,
+                        provider_trx_id: unknown.provider_trx_id,
+                        partner_ref_no: unknown.partner_ref_no,
+                        payload_json: unknown.raw_payload,
+                        created_at: now,
+                    })
+                    .await?;
+
+                self.repository
+                    .mark_provider_webhook_event_result(
+                        event.id,
+                        false,
+                        Some("Unsupported webhook payload shape"),
+                        true,
+                        Some("unsupported_webhook_payload"),
+                        Some(now),
+                    )
+                    .await?;
+
+                Ok(ProcessProviderWebhookResult {
+                    response_status: false,
+                    payment: None,
+                    notification_user_ids: vec![],
+                    publish_payment_event: false,
+                    publish_notification_event: false,
+                    callback_enqueued: false,
+                })
+            }
+        }
+    }
+
     fn ensure_provider_username(
         &self,
         store_profile: &StoreProviderProfile,
@@ -180,12 +399,257 @@ impl PaymentService {
 
         Ok(())
     }
+
+    async fn process_payment_webhook(
+        &self,
+        payment: PaymentWebhookInput,
+        expected_merchant_id: &str,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<ProcessProviderWebhookResult, AppError> {
+        let event = self
+            .repository
+            .insert_provider_webhook_event(NewProviderWebhookEventRecord {
+                id: Uuid::new_v4(),
+                provider_name: PAYMENT_PROVIDER_NAME.to_string(),
+                webhook_kind: ProviderWebhookKind::Payment,
+                merchant_id: Some(payment.merchant_id.clone()),
+                provider_trx_id: Some(payment.provider_trx_id.clone()),
+                partner_ref_no: None,
+                payload_json: payment.raw_payload.clone(),
+                created_at: now,
+            })
+            .await?;
+
+        if payment.merchant_id != expected_merchant_id {
+            return self
+                .reject_webhook_event(event.id, "Merchant id mismatch", "invalid_merchant_id", now)
+                .await;
+        }
+
+        let Some(target) = self
+            .repository
+            .find_payment_by_provider_trx_id(PAYMENT_PROVIDER_NAME, &payment.provider_trx_id)
+            .await?
+        else {
+            return self
+                .reject_webhook_event(
+                    event.id,
+                    "Provider transaction not found",
+                    "invalid_provider_trx_id",
+                    now,
+                )
+                .await;
+        };
+
+        if target.payment.provider_terminal_id.as_deref() != Some(payment.terminal_id.as_str()) {
+            return self
+                .reject_webhook_event(
+                    event.id,
+                    "Terminal id mismatch",
+                    "invalid_terminal_id",
+                    now,
+                )
+                .await;
+        }
+
+        if target.payment.gross_amount != payment.amount {
+            return self
+                .reject_webhook_event(
+                    event.id,
+                    "Amount mismatch",
+                    "invalid_amount",
+                    now,
+                )
+                .await;
+        }
+
+        if !custom_ref_matches(target.payment.custom_ref.as_deref(), payment.custom_ref.as_deref()) {
+            return self
+                .reject_webhook_event(
+                    event.id,
+                    "Custom ref mismatch",
+                    "invalid_custom_ref",
+                    now,
+                )
+                .await;
+        }
+
+        let callback_delivery = build_callback_delivery(
+            &target,
+            &target.payment,
+            &payment.status,
+            now,
+        )?;
+        let (notification_type, notification_title, notification_body) =
+            notification_copy(&target.store_name, &target.payment, &payment.status);
+        let outcome = self
+            .repository
+            .finalize_payment_from_webhook(PaymentWebhookFinalizeCommand {
+                webhook_event_id: event.id,
+                payment_id: target.payment.id,
+                final_status: payment.status.to_payment_status(),
+                provider_rrn: normalize_optional_string(payment.rrn.as_deref()),
+                provider_finished_at: payment.provider_finished_at.or(payment.provider_created_at),
+                payload_json: payment.raw_payload,
+                notification_type,
+                notification_title,
+                notification_body,
+                callback_delivery,
+                processed_at: now,
+            })
+            .await?;
+
+        let publish_payment_event = outcome.kind == PaymentWebhookFinalizeOutcomeKind::Finalized
+            && outcome.payment.is_some();
+        let publish_notification_event =
+            publish_payment_event && !outcome.notification_user_ids.is_empty();
+
+        Ok(ProcessProviderWebhookResult {
+            response_status: true,
+            payment: outcome.payment,
+            notification_user_ids: outcome.notification_user_ids,
+            publish_payment_event,
+            publish_notification_event,
+            callback_enqueued: outcome.callback_enqueued,
+        })
+    }
+
+    async fn reject_webhook_event(
+        &self,
+        event_id: Uuid,
+        verification_reason: &str,
+        processing_result: &str,
+        processed_at: chrono::DateTime<Utc>,
+    ) -> Result<ProcessProviderWebhookResult, AppError> {
+        self.repository
+            .mark_provider_webhook_event_result(
+                event_id,
+                false,
+                Some(verification_reason),
+                true,
+                Some(processing_result),
+                Some(processed_at),
+            )
+            .await?;
+
+        Ok(ProcessProviderWebhookResult {
+            response_status: false,
+            payment: None,
+            notification_user_ids: vec![],
+            publish_payment_event: false,
+            publish_notification_event: false,
+            callback_enqueued: false,
+        })
+    }
 }
 
 fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     value
         .map(|inner| inner.trim().to_string())
         .filter(|inner| !inner.is_empty())
+}
+
+fn ensure_any_payment_read(actor: &AuthenticatedUser) -> Result<(), AppError> {
+    if has_capability(actor, Capability::PaymentReadGlobal, None)
+        || has_capability(actor, Capability::PaymentRead, None)
+        || !actor.memberships.is_empty()
+    {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "You do not have permission to view payments".into(),
+        ))
+    }
+}
+
+fn payment_scope(actor: &AuthenticatedUser) -> (Option<Uuid>, bool) {
+    if has_capability(actor, Capability::PaymentReadGlobal, None) {
+        (Some(actor.user_id), true)
+    } else {
+        (Some(actor.user_id), false)
+    }
+}
+
+fn custom_ref_matches(expected: Option<&str>, actual: Option<&str>) -> bool {
+    match (normalize_optional_string(expected), normalize_optional_string(actual)) {
+        (Some(expected), Some(actual)) => expected == actual,
+        (Some(_), None) => false,
+        (None, _) => true,
+    }
+}
+
+fn notification_copy(
+    store_name: &str,
+    payment: &Payment,
+    status: &PaymentWebhookStatus,
+) -> (String, String, String) {
+    match status {
+        PaymentWebhookStatus::Success => (
+            "payment_success".into(),
+            format!("Payment success for {store_name}"),
+            format!(
+                "Payment {} succeeded and Rp {} moved into pending balance.",
+                payment.id, payment.store_pending_credit_amount
+            ),
+        ),
+        PaymentWebhookStatus::Failed => (
+            "payment_failed".into(),
+            format!("Payment failed for {store_name}"),
+            format!("Payment {} failed at provider side.", payment.id),
+        ),
+        PaymentWebhookStatus::Expired => (
+            "payment_expired".into(),
+            format!("Payment expired for {store_name}"),
+            format!("Payment {} expired before completion.", payment.id),
+        ),
+    }
+}
+
+fn build_callback_delivery(
+    target: &crate::modules::payments::domain::entity::PaymentWebhookTarget,
+    payment: &Payment,
+    status: &PaymentWebhookStatus,
+    now: chrono::DateTime<Utc>,
+) -> Result<Option<PendingCallbackDelivery>, AppError> {
+    let Some(target_url) = normalize_optional_string(target.callback_url.as_deref()) else {
+        return Ok(None);
+    };
+    let Some(secret) = normalize_optional_string(target.callback_secret.as_deref()) else {
+        return Ok(None);
+    };
+
+    let payload = serde_json::json!({
+        "event": format!("payment.{status}"),
+        "payment_id": payment.id,
+        "store_id": payment.store_id,
+        "status": status.to_payment_status(),
+        "provider_trx_id": payment.provider_trx_id,
+        "merchant_order_id": payment.merchant_order_id,
+        "custom_ref": payment.custom_ref,
+        "gross_amount": payment.gross_amount,
+        "platform_tx_fee_amount": payment.platform_tx_fee_amount,
+        "store_pending_credit_amount": payment.store_pending_credit_amount,
+        "finalized_at": now,
+        "timestamp": now,
+    });
+    let payload_json = serde_json::to_string(&payload)
+        .map_err(|error| AppError::Internal(anyhow::anyhow!(error.to_string())))?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|error| AppError::Internal(anyhow::anyhow!(error.to_string())))?;
+    mac.update(now.to_rfc3339().as_bytes());
+    mac.update(payload_json.as_bytes());
+    let signature = mac
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+
+    Ok(Some(PendingCallbackDelivery {
+        event_type: format!("payment.{status}"),
+        target_url,
+        signature,
+    }))
 }
 
 fn map_payment_insert_error(error: anyhow::Error, has_merchant_order_id: bool) -> AppError {
@@ -220,7 +684,10 @@ mod tests {
 
     use super::*;
     use crate::modules::payments::application::provider::GeneratedQris;
-    use crate::modules::payments::domain::entity::Payment;
+    use crate::modules::payments::domain::entity::{
+        DashboardPaymentDetail, DashboardPaymentSummary, NewProviderWebhookEventRecord, Payment,
+        PaymentWebhookFinalizeCommand,
+    };
 
     #[derive(Default)]
     struct MockPaymentRepository {
@@ -271,6 +738,7 @@ mod tests {
                 store_id: payment.store_id,
                 created_by_user_id: payment.created_by_user_id,
                 provider_name: payment.provider_name,
+                provider_terminal_id: Some(payment.provider_terminal_id),
                 provider_trx_id: None,
                 provider_rrn: None,
                 merchant_order_id: payment.merchant_order_id,
@@ -320,6 +788,73 @@ mod tests {
                 .get(&payment_id)
                 .filter(|payment| payment.store_id == store_id)
                 .cloned())
+        }
+
+        async fn list_dashboard_payments(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _search: Option<&str>,
+            _status: Option<&str>,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Vec<DashboardPaymentSummary>> {
+            Ok(vec![])
+        }
+
+        async fn count_dashboard_payments(
+            &self,
+            _search: Option<&str>,
+            _status: Option<&str>,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<i64> {
+            Ok(0)
+        }
+
+        async fn find_dashboard_payment_by_id(
+            &self,
+            _payment_id: Uuid,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Option<DashboardPaymentDetail>> {
+            Ok(None)
+        }
+
+        async fn find_payment_by_provider_trx_id(
+            &self,
+            _provider_name: &str,
+            _provider_trx_id: &str,
+        ) -> anyhow::Result<Option<crate::modules::payments::domain::entity::PaymentWebhookTarget>>
+        {
+            Ok(None)
+        }
+
+        async fn insert_provider_webhook_event(
+            &self,
+            _event: NewProviderWebhookEventRecord,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::ProviderWebhookEvent> {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn mark_provider_webhook_event_result(
+            &self,
+            _event_id: Uuid,
+            _is_verified: bool,
+            _verification_reason: Option<&str>,
+            _is_processed: bool,
+            _processing_result: Option<&str>,
+            _processed_at: Option<chrono::DateTime<Utc>>,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::ProviderWebhookEvent> {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn finalize_payment_from_webhook(
+            &self,
+            _command: PaymentWebhookFinalizeCommand,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::PaymentWebhookFinalizeOutcome>
+        {
+            unreachable!("not used in payment service tests")
         }
     }
 

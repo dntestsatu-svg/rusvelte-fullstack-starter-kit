@@ -50,6 +50,8 @@ mod tests {
         TransferRequest, TransferResult,
     };
     use crate::modules::payments::application::service::PaymentService;
+    use crate::modules::notifications::application::service::NotificationService;
+    use crate::modules::realtime::application::service::RealtimeService;
     use crate::modules::store_tokens::application::service::StoreTokenService;
     use crate::modules::store_tokens::domain::entity::{
         NewStoreApiTokenRecord, StoreApiTokenRecord,
@@ -481,6 +483,12 @@ mod tests {
         ));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
+        let notification_service = Arc::new(NotificationService::new(Arc::new(
+            crate::modules::notifications::infrastructure::repository::SqlxNotificationRepository::new(
+                db.clone(),
+            ),
+        )));
+        let realtime_service = Arc::new(RealtimeService::new(32));
 
         let state = AppState {
             config: Config {
@@ -497,8 +505,10 @@ mod tests {
             db,
             redis,
             auth_service,
+            notification_service,
             payment_idempotency_service,
             payment_service,
+            realtime_service,
             store_service,
             store_token_service,
             support_service,

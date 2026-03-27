@@ -4,8 +4,10 @@ use crate::infrastructure::db::init_db_pool;
 use crate::infrastructure::provider::config::QrisOtomatisConfig;
 use crate::infrastructure::provider::qris_otomatis::QrisOtomatisProvider;
 use crate::infrastructure::redis::init_redis_pool;
+use crate::modules::notifications::application::service::NotificationService;
 use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
 use crate::modules::payments::application::service::PaymentService;
+use crate::modules::realtime::application::service::RealtimeService;
 use crate::shared::error::AppError;
 use std::sync::Arc;
 use tracing::info;
@@ -91,6 +93,11 @@ impl Container {
                 db.clone(),
             ),
         );
+        let notification_repository = Arc::new(
+            crate::modules::notifications::infrastructure::repository::SqlxNotificationRepository::new(
+                db.clone(),
+            ),
+        );
         let provider_adapter = Arc::new(QrisOtomatisProvider::new(
             QrisOtomatisConfig::from_app_config(&config)?,
         )?);
@@ -100,14 +107,18 @@ impl Container {
         ));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
+        let notification_service = Arc::new(NotificationService::new(notification_repository));
+        let realtime_service = Arc::new(RealtimeService::new(256));
 
         let state = Arc::new(AppState {
             config,
             db,
             redis,
             auth_service,
+            notification_service,
             payment_idempotency_service,
             payment_service,
+            realtime_service,
             store_service,
             store_token_service,
             support_service,

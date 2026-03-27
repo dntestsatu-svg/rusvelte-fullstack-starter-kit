@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Menu, User, LayoutDashboard, Store, Users, MessageSquare } from "@lucide/svelte";
+	import { Menu, User, LayoutDashboard, Store, Users, MessageSquare, CreditCard } from "@lucide/svelte";
 	import * as Sheet from "$lib/components/ui/sheet/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import ThemeToggle from "../components/ThemeToggle.svelte";
 	import NotificationBell from "$lib/components/ui/NotificationBell.svelte";
+	import RealtimeBridge from "$lib/realtime/RealtimeBridge.svelte";
 	import type { AuthUser } from "../api/auth";
 
 	let { children, sessionUser } = $props<{
@@ -15,7 +16,8 @@
 
 	const baseNavItems = [
 		{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-		{ name: "Stores", href: "/dashboard/stores", icon: Store }
+		{ name: "Stores", href: "/dashboard/stores", icon: Store },
+		{ name: "Payments", href: "/dashboard/payments", icon: CreditCard }
 	];
 
 	// Derive navItems based on user role
@@ -41,6 +43,7 @@
 </script>
 
 <div class="min-h-screen bg-background text-foreground flex overflow-hidden">
+	<RealtimeBridge />
 	<!-- Sidebar (Desktop) -->
 	<aside
 		class="hidden lg:flex flex-col bg-muted/30 border-r transition-all duration-300 ease-in-out"

@@ -3,8 +3,10 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::modules::payments::domain::entity::{
-    NewPaymentIdempotencyRecord, NewPaymentRecord, Payment, PaymentIdempotencyRecord,
-    PaymentPendingUpdate, StoreProviderProfile,
+    DashboardPaymentDetail, DashboardPaymentSummary, NewPaymentIdempotencyRecord,
+    NewPaymentRecord, NewProviderWebhookEventRecord, Payment, PaymentIdempotencyRecord,
+    PaymentPendingUpdate, PaymentWebhookFinalizeCommand, PaymentWebhookFinalizeOutcome,
+    PaymentWebhookTarget, ProviderWebhookEvent, StoreProviderProfile,
 };
 
 #[async_trait]
@@ -23,6 +25,57 @@ pub trait PaymentRepository: Send + Sync {
         store_id: Uuid,
         payment_id: Uuid,
     ) -> anyhow::Result<Option<Payment>>;
+
+    async fn list_dashboard_payments(
+        &self,
+        limit: i64,
+        offset: i64,
+        search: Option<&str>,
+        status: Option<&str>,
+        user_scope: Option<Uuid>,
+        global_access: bool,
+    ) -> anyhow::Result<Vec<DashboardPaymentSummary>>;
+
+    async fn count_dashboard_payments(
+        &self,
+        search: Option<&str>,
+        status: Option<&str>,
+        user_scope: Option<Uuid>,
+        global_access: bool,
+    ) -> anyhow::Result<i64>;
+
+    async fn find_dashboard_payment_by_id(
+        &self,
+        payment_id: Uuid,
+        user_scope: Option<Uuid>,
+        global_access: bool,
+    ) -> anyhow::Result<Option<DashboardPaymentDetail>>;
+
+    async fn find_payment_by_provider_trx_id(
+        &self,
+        provider_name: &str,
+        provider_trx_id: &str,
+    ) -> anyhow::Result<Option<PaymentWebhookTarget>>;
+
+    async fn insert_provider_webhook_event(
+        &self,
+        event: NewProviderWebhookEventRecord,
+    ) -> anyhow::Result<ProviderWebhookEvent>;
+
+    async fn mark_provider_webhook_event_result(
+        &self,
+        event_id: Uuid,
+        is_verified: bool,
+        verification_reason: Option<&str>,
+        is_processed: bool,
+        processing_result: Option<&str>,
+        processed_at: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<ProviderWebhookEvent>;
+
+    async fn finalize_payment_from_webhook(
+        &self,
+        command: PaymentWebhookFinalizeCommand,
+    ) -> anyhow::Result<PaymentWebhookFinalizeOutcome>;
 }
 
 #[async_trait]

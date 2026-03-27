@@ -46,6 +46,12 @@ pub fn create_router(state: SharedState) -> Router {
         ));
 
     let protected_api_routes = Router::new()
+        .nest(
+            "/notifications",
+            crate::modules::notifications::routes(inner_state.clone()),
+        )
+        .nest("/payments", crate::modules::payments::dashboard_routes(inner_state.clone()))
+        .nest("/realtime", crate::modules::realtime::routes(inner_state.clone()))
         .nest("/support", support_routes(inner_state.clone()))
         .nest(
             "/stores",
@@ -68,6 +74,8 @@ pub fn create_router(state: SharedState) -> Router {
         "/client",
         crate::modules::payments::client_routes(inner_state.clone()),
     );
+    let webhook_routes =
+        Router::new().nest("/webhooks", crate::modules::payments::webhook_routes(inner_state.clone()));
 
     Router::new()
         .nest(
@@ -75,6 +83,7 @@ pub fn create_router(state: SharedState) -> Router {
             Router::new()
                 .merge(auth_api_routes)
                 .merge(client_api_routes)
+                .merge(webhook_routes)
                 .merge(protected_api_routes),
         )
         .nest(
