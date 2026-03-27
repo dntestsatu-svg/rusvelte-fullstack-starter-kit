@@ -35,6 +35,8 @@ use backend::modules::realtime::application::service::RealtimeService;
 use backend::modules::settlements::application::service::SettlementService;
 use backend::modules::settlements::domain::entity::SettlementRequest;
 use backend::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+use backend::modules::store_banks::application::service::StoreBankService;
+use backend::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
 use backend::modules::store_tokens::application::service::StoreTokenService;
 use backend::modules::store_tokens::domain::entity::{NewStoreApiTokenRecord, StoreApiTokenRecord};
 use backend::modules::store_tokens::domain::repository::StoreTokenRepository;
@@ -247,6 +249,21 @@ async fn build_harness() -> TestHarness {
     let notification_service = Arc::new(NotificationService::new(notification_repository));
     let realtime_service = Arc::new(RealtimeService::new(64));
     let settlement_service = Arc::new(SettlementService::new(settlement_repository));
+    let store_bank_service = Arc::new(StoreBankService::new(
+        Arc::new(SqlxStoreBankRepository::new(
+            db.clone(),
+            base_config.store_bank_account_encryption_key.clone(),
+        )),
+        Arc::new(
+            backend::modules::store_banks::infrastructure::cache::RedisStoreBankInquiryCache::new(
+                redis.clone(),
+            ),
+        ),
+        Arc::new(NoopProvider),
+        Arc::new(backend::infrastructure::audit::SqlxAuditLogRepository::new(
+            db.clone(),
+        )),
+    ));
     let support_service = Arc::new(SupportService::new(
         SupportRepository::new(db.clone()),
         Arc::new(NoOpCaptchaVerifier),
@@ -267,6 +284,7 @@ async fn build_harness() -> TestHarness {
         payment_service,
         realtime_service,
         settlement_service,
+        store_bank_service,
         store_service,
         store_token_service,
         support_service,

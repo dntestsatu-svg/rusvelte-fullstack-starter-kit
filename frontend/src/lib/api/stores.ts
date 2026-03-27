@@ -37,6 +37,32 @@ export interface StoreApiToken {
     created_at: string;
 }
 
+export interface StoreBankAccount {
+    id: string;
+    store_id: string;
+    owner_user_id: string;
+    bank_code: string;
+    bank_name: string;
+    account_holder_name: string;
+    account_number_last4: string;
+    is_default: boolean;
+    verification_status: 'verified';
+    verified_at?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface StoreBankInquiry {
+    bank_code: string;
+    bank_name: string;
+    account_holder_name: string;
+    account_number_last4: string;
+    provider_fee_amount: number;
+    partner_ref_no: string;
+    vendor_ref_no?: string | null;
+    inquiry_id: number;
+}
+
 export interface StoreBalanceSnapshot {
     store_id: string;
     pending_balance: number;
@@ -123,6 +149,35 @@ export const storesApi = {
 
     listTokens: async (id: string) => {
         return client.get<{ tokens: StoreApiToken[] }>(`/api/v1/stores/${id}/tokens`);
+    },
+
+    listBanks: async (id: string) => {
+        return client.get<{ banks: StoreBankAccount[] }>(`/api/v1/stores/${id}/banks`);
+    },
+
+    inquireBank: async (
+        id: string,
+        data: {
+            bank_code: string;
+            account_number: string;
+        }
+    ) => {
+        return client.post<{ inquiry: StoreBankInquiry }>(`/api/v1/stores/${id}/banks/inquiry`, data);
+    },
+
+    createBank: async (
+        id: string,
+        data: {
+            bank_code: string;
+            account_number: string;
+            is_default?: boolean;
+        }
+    ) => {
+        return client.post<{ bank: StoreBankAccount }>(`/api/v1/stores/${id}/banks`, data);
+    },
+
+    setDefaultBank: async (id: string, bankId: string) => {
+        return client.post<{ bank: StoreBankAccount }>(`/api/v1/stores/${id}/banks/${bankId}/default`);
     },
 
     createToken: async (id: string, data: { name: string }) => {

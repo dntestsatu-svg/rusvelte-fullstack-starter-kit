@@ -94,6 +94,8 @@ mod tests {
     use crate::modules::realtime::application::service::RealtimeService;
     use crate::modules::settlements::application::service::SettlementService;
     use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+    use crate::modules::store_banks::application::service::StoreBankService;
+    use crate::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
     use crate::modules::payments::domain::repository::{
         PaymentIdempotencyRepository, PaymentRepository,
     };
@@ -821,7 +823,10 @@ mod tests {
         let balance_service = Arc::new(StoreBalanceService::new(Arc::new(
             NoopStoreBalanceRepository,
         )));
-        let payment_service = Arc::new(PaymentService::new(payment_repository.clone(), provider));
+        let payment_service = Arc::new(PaymentService::new(
+            payment_repository.clone(),
+            provider.clone(),
+        ));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
         let notification_service = Arc::new(NotificationService::new(Arc::new(
@@ -833,6 +838,19 @@ mod tests {
         let settlement_service = Arc::new(SettlementService::new(Arc::new(
             SqlxSettlementRepository::new(db.clone()),
         )));
+        let store_bank_service = Arc::new(StoreBankService::new(
+            Arc::new(SqlxStoreBankRepository::new(
+                db.clone(),
+                "bank-test-key".into(),
+            )),
+            Arc::new(
+                crate::modules::store_banks::infrastructure::cache::RedisStoreBankInquiryCache::new(
+                    redis.clone(),
+                ),
+            ),
+            provider.clone(),
+            Arc::new(MockAuditRepository),
+        ));
 
         let state = AppState {
             config: Config {
@@ -840,6 +858,7 @@ mod tests {
                 database_url: "postgres://postgres:postgres@localhost/justqiu_test".into(),
                 redis_url: "redis://127.0.0.1/".into(),
                 log_level: "info".into(),
+                store_bank_account_encryption_key: "bank-test-key".into(),
                 external_api_url: "http://127.0.0.1".into(),
                 external_api_uuid: "uuid".into(),
                 external_api_client: "client".into(),
@@ -855,6 +874,7 @@ mod tests {
             payment_service,
             realtime_service,
             settlement_service,
+            store_bank_service,
             store_service,
             store_token_service: store_token_service.clone(),
             support_service,

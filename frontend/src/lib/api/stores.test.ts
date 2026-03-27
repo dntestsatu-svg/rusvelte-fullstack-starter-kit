@@ -75,6 +75,130 @@ describe('storesApi token endpoints', () => {
 	});
 });
 
+describe('storesApi bank endpoints', () => {
+	const originalDocument = globalThis.document;
+
+	beforeEach(() => {
+		Object.defineProperty(globalThis, 'document', {
+			value: { cookie: 'XSRF-TOKEN=csrf-123' },
+			configurable: true
+		});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		if (originalDocument) {
+			Object.defineProperty(globalThis, 'document', {
+				value: originalDocument,
+				configurable: true
+			});
+		} else {
+			Reflect.deleteProperty(globalThis, 'document');
+		}
+	});
+
+	it('posts inquiry and create bank requests to the scoped store endpoints with CSRF', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						inquiry: {
+							bank_code: '014',
+							bank_name: 'PT. BANK CENTRAL ASIA TBK',
+							account_holder_name: 'Alice Owner',
+							account_number_last4: '7890',
+							provider_fee_amount: 1800,
+							partner_ref_no: 'partner-ref-15',
+							vendor_ref_no: 'vendor-ref-15',
+							inquiry_id: 1550
+						}
+					}),
+					{ status: 200, headers: { 'content-type': 'application/json' } }
+				)
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						bank: {
+							id: 'bank-1',
+							store_id: 'store-1',
+							owner_user_id: 'user-1',
+							bank_code: '014',
+							bank_name: 'PT. BANK CENTRAL ASIA TBK',
+							account_holder_name: 'Alice Owner',
+							account_number_last4: '7890',
+							is_default: true,
+							verification_status: 'verified',
+							verified_at: '2026-03-27T00:00:00Z',
+							created_at: '2026-03-27T00:00:00Z',
+							updated_at: '2026-03-27T00:00:00Z'
+						}
+					}),
+					{ status: 201, headers: { 'content-type': 'application/json' } }
+				)
+			);
+		vi.stubGlobal('fetch', fetchMock);
+
+		await storesApi.inquireBank('store-1', {
+			bank_code: '014',
+			account_number: '1234567890'
+		});
+		await storesApi.createBank('store-1', {
+			bank_code: '014',
+			account_number: '1234567890',
+			is_default: true
+		});
+
+		const [inquiryUrl, inquiryOptions] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		const [createUrl, createOptions] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+
+		expect(inquiryUrl).toBe('/api/v1/stores/store-1/banks/inquiry');
+		expect(createUrl).toBe('/api/v1/stores/store-1/banks');
+		expect(new Headers(inquiryOptions.headers).get('X-CSRF-Token')).toBe('csrf-123');
+		expect(new Headers(createOptions.headers).get('X-CSRF-Token')).toBe('csrf-123');
+		expect(createOptions.body).toBe(
+			JSON.stringify({
+				bank_code: '014',
+				account_number: '1234567890',
+				is_default: true
+			})
+		);
+	});
+
+	it('posts set default requests to the scoped bank endpoint with CSRF', async () => {
+		const fetchMock = vi.fn(async () => {
+			return new Response(
+				JSON.stringify({
+					bank: {
+						id: 'bank-1',
+						store_id: 'store-1',
+						owner_user_id: 'user-1',
+						bank_code: '014',
+						bank_name: 'PT. BANK CENTRAL ASIA TBK',
+						account_holder_name: 'Alice Owner',
+						account_number_last4: '7890',
+						is_default: true,
+						verification_status: 'verified',
+						verified_at: '2026-03-27T00:00:00Z',
+						created_at: '2026-03-27T00:00:00Z',
+						updated_at: '2026-03-27T00:00:00Z'
+					}
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } }
+			);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await storesApi.setDefaultBank('store-1', 'bank-1');
+
+		const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		expect(url).toBe('/api/v1/stores/store-1/banks/bank-1/default');
+		expect(options.method).toBe('POST');
+		expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('csrf-123');
+	});
+});
+
 describe('storesApi balance endpoints', () => {
 	it('requests store balance snapshot using scoped store id', async () => {
 		const fetchMock = vi.fn(async () => {

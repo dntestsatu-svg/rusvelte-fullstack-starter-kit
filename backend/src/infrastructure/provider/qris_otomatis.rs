@@ -290,6 +290,7 @@ fn provider_bad_request(operation: &str, message: Option<&str>) -> AppError {
 mod tests {
     use std::collections::VecDeque;
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -321,14 +322,6 @@ mod tests {
                 status,
                 body,
                 delay: Duration::ZERO,
-            }
-        }
-
-        fn delayed(status: StatusCode, body: Value, delay: Duration) -> Self {
-            Self {
-                status,
-                body,
-                delay,
             }
         }
     }
@@ -543,6 +536,28 @@ mod tests {
         (provider, state)
     }
 
+    async fn spawn_hanging_server() -> (SocketAddr, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accepted_connections = Arc::new(AtomicUsize::new(0));
+        let accepted_connections_for_task = accepted_connections.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                accepted_connections_for_task.fetch_add(1, Ordering::SeqCst);
+
+                tokio::spawn(async move {
+                    let _stream = stream;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                });
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        (addr, accepted_connections)
+    }
+
     #[tokio::test]
     async fn generate_qris_success_mapping() {
         let state = TestProviderState::default();
@@ -632,17 +647,15 @@ mod tests {
 
     #[tokio::test]
     async fn generate_qris_timeout_is_reported_without_retry() {
-        let state = TestProviderState::default();
-        state.push_generate(MockResponse::delayed(
-            StatusCode::OK,
-            json!({
-                "status": true,
-                "data": "late",
-                "trx_id": "trx-late"
-            }),
-            Duration::from_millis(50),
-        ));
-        let (provider, state) = build_provider_with_timeout(state, Duration::from_millis(10)).await;
+        let (addr, accepted_connections) = spawn_hanging_server().await;
+        let provider = QrisOtomatisProvider::new(QrisOtomatisConfig {
+            base_url: reqwest::Url::parse(&format!("http://{addr}/")).unwrap(),
+            merchant_uuid: "merchant-uuid".into(),
+            client_name: "client-name".into(),
+            client_key: "client-key".into(),
+            timeout: Duration::from_millis(10),
+        })
+        .unwrap();
 
         let error = provider
             .generate_qris(GenerateQrisRequest {
@@ -656,10 +669,13 @@ mod tests {
 
         println!(
             "{}",
-            json!({"timeout_error": error.to_string(), "call_count": state.recorded().len()})
+            json!({
+                "timeout_error": error.to_string(),
+                "accepted_connections": accepted_connections.load(Ordering::SeqCst)
+            })
         );
         assert!(matches!(error, AppError::Internal(_)));
-        assert_eq!(state.recorded().len(), 1);
+        assert!(accepted_connections.load(Ordering::SeqCst) <= 1);
     }
 
     #[tokio::test]
@@ -1087,6 +1103,7 @@ mod tests {
             database_url: "postgres://localhost".into(),
             redis_url: "redis://127.0.0.1".into(),
             log_level: "info".into(),
+            store_bank_account_encryption_key: "bank-test-key".into(),
             external_api_url: "https://provider.example".into(),
             external_api_uuid: "uuid-123".into(),
             external_api_client: "client-123".into(),

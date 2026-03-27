@@ -12,6 +12,9 @@ use crate::modules::payments::application::service::PaymentService;
 use crate::modules::realtime::application::service::RealtimeService;
 use crate::modules::settlements::application::service::SettlementService;
 use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+use crate::modules::store_banks::application::service::StoreBankService;
+use crate::modules::store_banks::infrastructure::cache::RedisStoreBankInquiryCache;
+use crate::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
 use crate::shared::error::AppError;
 use std::sync::Arc;
 use tracing::info;
@@ -95,6 +98,10 @@ impl Container {
                 store_token_audit_repo,
             ),
         );
+        let store_bank_repository = Arc::new(SqlxStoreBankRepository::new(
+            db.clone(),
+            config.store_bank_account_encryption_key.clone(),
+        ));
         let payment_repository = Arc::new(
             crate::modules::payments::infrastructure::repository::SqlxPaymentRepository::new(
                 db.clone(),
@@ -108,6 +115,15 @@ impl Container {
         let provider_adapter = Arc::new(QrisOtomatisProvider::new(
             QrisOtomatisConfig::from_app_config(&config)?,
         )?);
+        let store_bank_audit_repo = Arc::new(
+            crate::infrastructure::audit::SqlxAuditLogRepository::new(db.clone()),
+        );
+        let store_bank_service = Arc::new(StoreBankService::new(
+            store_bank_repository,
+            Arc::new(RedisStoreBankInquiryCache::new(redis.clone())),
+            provider_adapter.clone(),
+            store_bank_audit_repo,
+        ));
         let payment_service = Arc::new(PaymentService::new(
             payment_repository.clone(),
             provider_adapter,
@@ -131,6 +147,7 @@ impl Container {
             payment_service,
             realtime_service,
             settlement_service,
+            store_bank_service,
             store_service,
             store_token_service,
             support_service,

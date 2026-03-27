@@ -34,6 +34,8 @@ use backend::modules::payments::infrastructure::repository::SqlxPaymentRepositor
 use backend::modules::realtime::application::service::RealtimeService;
 use backend::modules::settlements::application::service::SettlementService;
 use backend::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+use backend::modules::store_banks::application::service::StoreBankService;
+use backend::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
 use backend::modules::store_tokens::application::service::StoreTokenService;
 use backend::modules::store_tokens::domain::entity::{NewStoreApiTokenRecord, StoreApiTokenRecord};
 use backend::modules::store_tokens::domain::repository::StoreTokenRepository;
@@ -238,6 +240,26 @@ async fn build_harness(provider: Arc<dyn PaymentProviderGateway>) -> TestHarness
     let settlement_service = Arc::new(SettlementService::new(Arc::new(
         SqlxSettlementRepository::new(db.clone()),
     )));
+    let store_bank_service = Arc::new(StoreBankService::new(
+        Arc::new(SqlxStoreBankRepository::new(
+            db.clone(),
+            base_config.store_bank_account_encryption_key.clone(),
+        )),
+        Arc::new(
+            backend::modules::store_banks::infrastructure::cache::RedisStoreBankInquiryCache::new(
+                redis.clone(),
+            ),
+        ),
+        Arc::new(MockProvider {
+            snapshot: ProviderBalanceSnapshot {
+                provider_pending_balance: 0,
+                provider_settle_balance: 0,
+            },
+        }),
+        Arc::new(backend::infrastructure::audit::SqlxAuditLogRepository::new(
+            db.clone(),
+        )),
+    ));
     let support_service = Arc::new(SupportService::new(
         SupportRepository::new(db.clone()),
         Arc::new(NoOpCaptchaVerifier),
@@ -258,6 +280,7 @@ async fn build_harness(provider: Arc<dyn PaymentProviderGateway>) -> TestHarness
         payment_service,
         realtime_service,
         settlement_service,
+        store_bank_service,
         store_service,
         store_token_service,
         support_service,

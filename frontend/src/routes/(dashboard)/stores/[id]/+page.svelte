@@ -2,12 +2,14 @@
     import { onMount } from 'svelte';
     import { page } from '$app/state';
     import { storesApi, type Store, type StoreMember } from '$lib/api/stores';
+    import StoreBanksPanel from '$lib/components/stores/StoreBanksPanel.svelte';
     import StoreTokensPanel from '$lib/components/stores/StoreTokensPanel.svelte';
     import { Badge } from '$lib/components/ui/badge';
     import { Button } from '$lib/components/ui/button';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
+    import { canManageStoreBanks, canViewStoreBanks } from '$lib/stores/bank-access';
     import { canAccessStoreTokens } from '$lib/stores/token-access';
     import {
         Select,
@@ -48,7 +50,7 @@
     let providerUsername = $state('');
     let status = $state<'active' | 'inactive'>('active');
     let editedRoles = $state<Record<string, StoreMember['store_role']>>({});
-    let activeStoreTab = $state<'members' | 'tokens'>('members');
+    let activeStoreTab = $state<'members' | 'tokens' | 'banks'>('members');
 
     const isDev = $derived(page.data.sessionUser?.role === 'dev');
     const isOwner = $derived(store?.owner_user_id === page.data.sessionUser?.id);
@@ -62,9 +64,26 @@
             sessionUserRole: page.data.sessionUser?.role
         })
     );
+    const canMirrorStoreBanks = $derived(
+        canViewStoreBanks({
+            storeOwnerUserId: store?.owner_user_id,
+            sessionUserId: page.data.sessionUser?.id,
+            sessionUserRole: page.data.sessionUser?.role
+        })
+    );
+    const canManageBanks = $derived(
+        canManageStoreBanks({
+            storeOwnerUserId: store?.owner_user_id,
+            sessionUserId: page.data.sessionUser?.id,
+            sessionUserRole: page.data.sessionUser?.role
+        })
+    );
 
     $effect(() => {
         if (!canMirrorStoreTokens && activeStoreTab === 'tokens') {
+            activeStoreTab = 'members';
+        }
+        if (!canMirrorStoreBanks && activeStoreTab === 'banks') {
             activeStoreTab = 'members';
         }
     });
@@ -300,17 +319,27 @@
                 <CardHeader>
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <CardTitle>{activeStoreTab === 'members' ? 'Members' : 'Tokens'}</CardTitle>
+                            <CardTitle>
+                                {#if activeStoreTab === 'members'}
+                                    Members
+                                {:else if activeStoreTab === 'tokens'}
+                                    Tokens
+                                {:else}
+                                    Banks
+                                {/if}
+                            </CardTitle>
                             <CardDescription>
                                 {#if activeStoreTab === 'members'}
                                     Owner is managed automatically. Additional members are scoped to this store.
+                                {:else if activeStoreTab === 'banks'}
+                                    Verified payout destination accounts stay encrypted at rest and only show masked last4 in this dashboard.
                                 {:else}
                                     Manage active bearer tokens for Store Client API access.
                                 {/if}
                             </CardDescription>
                         </div>
 
-                        {#if canMirrorStoreTokens}
+                        {#if canMirrorStoreTokens || canMirrorStoreBanks}
                             <div class="inline-flex rounded-lg border bg-muted/30 p-1">
                                 <button
                                     type="button"
@@ -323,23 +352,40 @@
                                 >
                                     Members
                                 </button>
-                                <button
-                                    type="button"
-                                    class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                                        activeStoreTab === 'tokens'
-                                            ? 'bg-background text-foreground shadow-sm'
-                                            : 'text-muted-foreground'
-                                    }`}
-                                    onclick={() => activeStoreTab = 'tokens'}
-                                >
-                                    Tokens
-                                </button>
+                                {#if canMirrorStoreBanks}
+                                    <button
+                                        type="button"
+                                        class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                            activeStoreTab === 'banks'
+                                                ? 'bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground'
+                                        }`}
+                                        onclick={() => activeStoreTab = 'banks'}
+                                    >
+                                        Banks
+                                    </button>
+                                {/if}
+                                {#if canMirrorStoreTokens}
+                                    <button
+                                        type="button"
+                                        class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                            activeStoreTab === 'tokens'
+                                                ? 'bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground'
+                                        }`}
+                                        onclick={() => activeStoreTab = 'tokens'}
+                                    >
+                                        Tokens
+                                    </button>
+                                {/if}
                             </div>
                         {/if}
                     </div>
                 </CardHeader>
                 <CardContent class="space-y-4">
-                    {#if activeStoreTab === 'tokens'}
+                    {#if activeStoreTab === 'banks'}
+                        <StoreBanksPanel storeId={storeId} canManage={canManageBanks} />
+                    {:else if activeStoreTab === 'tokens'}
                         <StoreTokensPanel storeId={storeId} />
                     {:else}
                     {#if canManageMembers}

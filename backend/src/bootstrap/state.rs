@@ -8,6 +8,7 @@ use crate::modules::payments::application::idempotency::PaymentIdempotencyServic
 use crate::modules::payments::application::service::PaymentService;
 use crate::modules::realtime::application::service::RealtimeService;
 use crate::modules::settlements::application::service::SettlementService;
+use crate::modules::store_banks::application::service::StoreBankService;
 use crate::modules::store_tokens::application::service::StoreTokenService;
 use crate::modules::stores::application::service::StoreService;
 use crate::modules::support::application::service::SupportService;
@@ -26,6 +27,7 @@ pub struct AppState {
     pub payment_service: Arc<PaymentService>,
     pub realtime_service: Arc<RealtimeService>,
     pub settlement_service: Arc<SettlementService>,
+    pub store_bank_service: Arc<StoreBankService>,
     pub store_service: Arc<StoreService>,
     pub store_token_service: Arc<StoreTokenService>,
     pub support_service: Arc<SupportService>,
