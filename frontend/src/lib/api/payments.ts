@@ -37,6 +37,12 @@ export interface DashboardPaymentListResponse {
 	per_page: number;
 }
 
+export interface DashboardPaymentDistribution {
+	success: number;
+	failed: number;
+	expired: number;
+}
+
 export const paymentsApi = {
 	list: async (params: {
 		page?: number;
@@ -55,5 +61,11 @@ export const paymentsApi = {
 
 	get: async (paymentId: string) => {
 		return client.get<{ payment: DashboardPaymentDetail }>(`/api/v1/payments/${paymentId}`);
+	},
+
+	getDistribution: async () => {
+		return client.get<{ distribution: DashboardPaymentDistribution }>(
+			'/api/v1/payments/distribution'
+		);
 	}
 };

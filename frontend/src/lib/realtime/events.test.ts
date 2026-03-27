@@ -20,9 +20,10 @@ describe('invalidateRealtimeQueries', () => {
 			{ type: 'payment.updated', data: { payment_id: 'p-1' } }
 		);
 
-		expect(invalidateQueries).toHaveBeenCalledTimes(2);
+		expect(invalidateQueries).toHaveBeenCalledTimes(3);
 		expect(invalidateQueries).toHaveBeenNthCalledWith(1, { queryKey: ['payments'] });
-		expect(invalidateQueries).toHaveBeenNthCalledWith(2, { queryKey: ['notifications'] });
+		expect(invalidateQueries).toHaveBeenNthCalledWith(2, { queryKey: ['balances'] });
+		expect(invalidateQueries).toHaveBeenNthCalledWith(3, { queryKey: ['notifications'] });
 	});
 
 	it('invalidates only notification queries for notification events', async () => {

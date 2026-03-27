@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod balances;
 pub mod notifications;
 pub mod payments;
 pub mod realtime;

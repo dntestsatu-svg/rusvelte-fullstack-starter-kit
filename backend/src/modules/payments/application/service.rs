@@ -9,11 +9,11 @@ use sqlx::Error as SqlxError;
 use uuid::Uuid;
 
 use crate::modules::payments::application::provider::{
-    GenerateQrisRequest, PaymentProviderGateway,
+    GenerateQrisRequest, GetBalanceRequest, PaymentProviderGateway, ProviderBalanceSnapshot,
 };
 use crate::modules::payments::domain::entity::{
     payment_to_detail, payment_to_status_view, ClientPaymentDetail, ClientPaymentStatusView,
-    DashboardPaymentDetail, DashboardPaymentSummary, NewPaymentRecord,
+    DashboardPaymentDetail, DashboardPaymentDistribution, DashboardPaymentSummary, NewPaymentRecord,
     NewProviderWebhookEventRecord, Payment, PaymentPendingUpdate, PaymentStatus,
     PaymentWebhookFinalizeCommand, PaymentWebhookFinalizeOutcomeKind,
     PaymentWebhookStatus, PendingCallbackDelivery, ProviderWebhookKind, StoreProviderProfile,
@@ -284,6 +284,23 @@ impl PaymentService {
             .ok_or_else(|| AppError::NotFound("Payment not found".into()))?;
 
         Ok(payment)
+    }
+
+    pub async fn get_dashboard_payment_distribution(
+        &self,
+        actor: &AuthenticatedUser,
+    ) -> Result<DashboardPaymentDistribution, AppError> {
+        ensure_any_payment_read(actor)?;
+        let (user_scope, global_access) = payment_scope(actor);
+
+        self.repository
+            .count_dashboard_payment_distribution(user_scope, global_access)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn get_provider_balance_snapshot(&self) -> Result<ProviderBalanceSnapshot, AppError> {
+        self.provider.get_balance(GetBalanceRequest).await
     }
 
     pub async fn process_provider_webhook(
@@ -685,8 +702,8 @@ mod tests {
     use super::*;
     use crate::modules::payments::application::provider::GeneratedQris;
     use crate::modules::payments::domain::entity::{
-        DashboardPaymentDetail, DashboardPaymentSummary, NewProviderWebhookEventRecord, Payment,
-        PaymentWebhookFinalizeCommand,
+        DashboardPaymentDetail, DashboardPaymentDistribution, DashboardPaymentSummary,
+        NewProviderWebhookEventRecord, Payment, PaymentWebhookFinalizeCommand,
     };
 
     #[derive(Default)]
@@ -819,6 +836,18 @@ mod tests {
             _global_access: bool,
         ) -> anyhow::Result<Option<DashboardPaymentDetail>> {
             Ok(None)
+        }
+
+        async fn count_dashboard_payment_distribution(
+            &self,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<DashboardPaymentDistribution> {
+            Ok(DashboardPaymentDistribution {
+                success: 0,
+                failed: 0,
+                expired: 0,
+            })
         }
 
         async fn find_payment_by_provider_trx_id(

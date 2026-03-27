@@ -10,6 +10,7 @@ use crate::modules::auth::interfaces::http::middlewares::{
     csrf_middleware, rate_limit_middleware, session_middleware,
 };
 use crate::modules::auth::interfaces::http::routes::auth_routes;
+use crate::modules::balances;
 use crate::modules::stores::application::service::StoreService;
 use crate::modules::support::application::service::SupportService;
 use crate::modules::support::interfaces::http::routes::{public_support_routes, support_routes};
@@ -46,6 +47,7 @@ pub fn create_router(state: SharedState) -> Router {
         ));
 
     let protected_api_routes = Router::new()
+        .nest("/dev", balances::dev_routes(inner_state.clone()))
         .nest(
             "/notifications",
             crate::modules::notifications::routes(inner_state.clone()),

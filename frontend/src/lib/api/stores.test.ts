@@ -75,6 +75,37 @@ describe('storesApi token endpoints', () => {
 	});
 });
 
+describe('storesApi balance endpoints', () => {
+	it('requests store balance snapshot using scoped store id', async () => {
+		const fetchMock = vi.fn(async () => {
+			return new Response(
+				JSON.stringify({
+					balance: {
+						store_id: 'store-1',
+						pending_balance: 1200,
+						settled_balance: 400,
+						reserved_settled_balance: 100,
+						withdrawable_balance: 300,
+						updated_at: '2026-03-27T00:00:00Z'
+					}
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				}
+			);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		await storesApi.getBalances('store-1');
+
+		const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		expect(url).toBe('/api/v1/stores/store-1/balances');
+		expect(options.method).toBe('GET');
+		expect(options.credentials).toBe('include');
+	});
+});
+
 describe('apiFetch', () => {
 	it('throws ApiError with status metadata for forbidden responses', async () => {
 		const fetchMock = vi.fn(async () => {

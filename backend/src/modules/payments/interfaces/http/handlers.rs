@@ -20,7 +20,7 @@ use crate::modules::payments::application::service::{
 };
 use crate::modules::payments::domain::entity::{
     ClientPaymentDetail, ClientPaymentStatusView, DashboardPaymentDetail,
-    DashboardPaymentSummary, PaymentStatus, PaymentWebhookStatus,
+    DashboardPaymentDistribution, DashboardPaymentSummary, PaymentStatus, PaymentWebhookStatus,
     CLIENT_PAYMENT_CREATE_RATE_LIMIT,
     CLIENT_PAYMENT_CREATE_RATE_WINDOW_SECONDS,
 };
@@ -57,6 +57,11 @@ pub struct DashboardPaymentListResponse {
 #[derive(Debug, Serialize)]
 pub struct DashboardPaymentDetailResponse {
     pub payment: DashboardPaymentDetail,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardPaymentDistributionResponse {
+    pub distribution: DashboardPaymentDistribution,
 }
 
 #[derive(Debug, Serialize)]
@@ -267,6 +272,19 @@ pub async fn get_dashboard_payment(
         .await?;
 
     Ok(Json(DashboardPaymentDetailResponse { payment }))
+}
+
+pub async fn get_dashboard_payment_distribution(
+    State(state): State<AppState>,
+    ctx: Option<Extension<SessionContext>>,
+) -> Result<Json<DashboardPaymentDistributionResponse>, AppError> {
+    let actor = resolve_dashboard_actor(&state, ctx).await?;
+    let distribution = state
+        .payment_service
+        .get_dashboard_payment_distribution(&actor)
+        .await?;
+
+    Ok(Json(DashboardPaymentDistributionResponse { distribution }))
 }
 
 pub async fn provider_webhook(

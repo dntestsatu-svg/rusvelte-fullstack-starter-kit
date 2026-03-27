@@ -37,6 +37,15 @@ export interface StoreApiToken {
     created_at: string;
 }
 
+export interface StoreBalanceSnapshot {
+    store_id: string;
+    pending_balance: number;
+    settled_balance: number;
+    reserved_settled_balance: number;
+    withdrawable_balance: number;
+    updated_at: string;
+}
+
 export interface StoreListResponse {
     stores: Store[];
     total: number;
@@ -125,5 +134,9 @@ export const storesApi = {
 
     revokeToken: async (id: string, tokenId: string) => {
         return client.delete(`/api/v1/stores/${id}/tokens/${tokenId}`);
+    },
+
+    getBalances: async (id: string) => {
+        return client.get<{ balance: StoreBalanceSnapshot }>(`/api/v1/stores/${id}/balances`);
     }
 };

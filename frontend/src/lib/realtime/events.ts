@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
-import { notificationQueryKeys, paymentQueryKeys } from './query-keys';
+import { balanceQueryKeys, notificationQueryKeys, paymentQueryKeys } from './query-keys';
 
 export type RealtimeEventName = 'payment.updated' | 'notification.created';
 
@@ -19,6 +19,7 @@ export async function invalidateRealtimeQueries(
 ): Promise<void> {
 	if (event.type === 'payment.updated') {
 		await queryClient.invalidateQueries({ queryKey: paymentQueryKeys.all });
+		await queryClient.invalidateQueries({ queryKey: balanceQueryKeys.all });
 		await queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
 		return;
 	}

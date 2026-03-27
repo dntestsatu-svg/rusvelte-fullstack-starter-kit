@@ -26,6 +26,7 @@ pub fn client_routes(state: AppState) -> Router<AppState> {
 pub fn dashboard_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/", get(handlers::list_dashboard_payments))
+        .route("/distribution", get(handlers::get_dashboard_payment_distribution))
         .route("/:paymentId", get(handlers::get_dashboard_payment))
         .with_state(state)
 }
@@ -65,6 +66,12 @@ mod tests {
     use crate::infrastructure::provider::config::QrisOtomatisConfig;
     use crate::infrastructure::provider::qris_otomatis::QrisOtomatisProvider;
     use crate::infrastructure::security::argon2::hash_secret;
+    use crate::modules::balances::application::service::StoreBalanceService;
+    use crate::modules::balances::domain::entity::{
+        BalanceSummaryDelta, NewStoreBalanceLedgerEntry, StoreBalanceLedgerEntry,
+        StoreBalanceSnapshot, StoreBalanceSummary,
+    };
+    use crate::modules::balances::domain::repository::StoreBalanceRepository;
     use crate::modules::auth::application::service::AuthService;
     use crate::modules::auth::domain::repository::AuthRepository;
     use crate::modules::auth::domain::session::Session;
@@ -295,6 +302,44 @@ mod tests {
 
         async fn deactivate_member(&self, _store_id: Uuid, _member_id: Uuid) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct NoopStoreBalanceRepository;
+
+    #[async_trait]
+    impl StoreBalanceRepository for NoopStoreBalanceRepository {
+        async fn fetch_store_balance_snapshot(
+            &self,
+            _store_id: Uuid,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Option<StoreBalanceSnapshot>> {
+            Ok(None)
+        }
+
+        async fn fetch_store_balance_summary(
+            &self,
+            _store_id: Uuid,
+        ) -> anyhow::Result<Option<StoreBalanceSummary>> {
+            Ok(None)
+        }
+
+        async fn apply_summary_delta(
+            &self,
+            _store_id: Uuid,
+            _delta: BalanceSummaryDelta,
+            _updated_at: chrono::DateTime<chrono::Utc>,
+        ) -> anyhow::Result<StoreBalanceSummary> {
+            Err(anyhow::anyhow!("balance summaries are not used in payment route tests"))
+        }
+
+        async fn insert_ledger_entry(
+            &self,
+            _entry: NewStoreBalanceLedgerEntry,
+        ) -> anyhow::Result<StoreBalanceLedgerEntry> {
+            Err(anyhow::anyhow!("balance ledger is not used in payment route tests"))
         }
     }
 
@@ -545,6 +590,19 @@ mod tests {
             Ok(None)
         }
 
+        async fn count_dashboard_payment_distribution(
+            &self,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<crate::modules::payments::domain::entity::DashboardPaymentDistribution>
+        {
+            Ok(crate::modules::payments::domain::entity::DashboardPaymentDistribution {
+                success: 0,
+                failed: 0,
+                expired: 0,
+            })
+        }
+
         async fn find_payment_by_provider_trx_id(
             &self,
             _provider_name: &str,
@@ -758,6 +816,9 @@ mod tests {
             token_repository,
             Arc::new(MockAuditRepository),
         ));
+        let balance_service = Arc::new(StoreBalanceService::new(Arc::new(
+            NoopStoreBalanceRepository,
+        )));
         let payment_service = Arc::new(PaymentService::new(payment_repository.clone(), provider));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
@@ -783,6 +844,7 @@ mod tests {
             db,
             redis: redis.clone(),
             auth_service,
+            balance_service,
             notification_service,
             payment_idempotency_service,
             payment_service,

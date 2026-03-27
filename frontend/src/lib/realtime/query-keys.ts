@@ -5,7 +5,13 @@ export const paymentQueryKeys = {
 	all: ['payments'] as const,
 	list: (params: { page: number; perPage: number; search: string; status: PaymentStatus | 'all' }) =>
 		['payments', 'list', params] as const,
-	detail: (paymentId: string) => ['payments', 'detail', paymentId] as const
+	detail: (paymentId: string) => ['payments', 'detail', paymentId] as const,
+	distribution: () => ['payments', 'distribution'] as const
+};
+
+export const balanceQueryKeys = {
+	all: ['balances'] as const,
+	store: (storeId: string) => ['balances', 'store', storeId] as const
 };
 
 export const notificationQueryKeys = {

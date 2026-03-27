@@ -371,6 +371,44 @@ impl PaymentRepository for SqlxPaymentRepository {
         Ok(row.map(Into::into))
     }
 
+    async fn count_dashboard_payment_distribution(
+        &self,
+        user_scope: Option<Uuid>,
+        global_access: bool,
+    ) -> anyhow::Result<crate::modules::payments::domain::entity::DashboardPaymentDistribution> {
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                COUNT(*) FILTER (WHERE p.status = 'success') AS success,
+                COUNT(*) FILTER (WHERE p.status = 'failed') AS failed,
+                COUNT(*) FILTER (WHERE p.status = 'expired') AS expired
+            FROM payments p
+            INNER JOIN stores s ON s.id = p.store_id
+            WHERE s.deleted_at IS NULL
+              AND (
+                $1::BOOLEAN = TRUE
+                OR EXISTS (
+                    SELECT 1
+                    FROM store_members sm
+                    WHERE sm.store_id = p.store_id
+                      AND sm.user_id = $2
+                      AND sm.status = 'active'
+                )
+              )
+            "#,
+            global_access,
+            user_scope
+        )
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok(crate::modules::payments::domain::entity::DashboardPaymentDistribution {
+            success: row.success.unwrap_or(0),
+            failed: row.failed.unwrap_or(0),
+            expired: row.expired.unwrap_or(0),
+        })
+    }
+
     async fn find_payment_by_provider_trx_id(
         &self,
         provider_name: &str,

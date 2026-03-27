@@ -130,6 +130,13 @@ pub struct StoreProviderProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DashboardPaymentDistribution {
+    pub success: i64,
+    pub failed: i64,
+    pub expired: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderWebhookKind {
     Payment,

@@ -36,6 +36,12 @@ mod tests {
 
     use super::*;
     use crate::bootstrap::config::Config;
+    use crate::modules::balances::application::service::StoreBalanceService;
+    use crate::modules::balances::domain::entity::{
+        BalanceSummaryDelta, NewStoreBalanceLedgerEntry, StoreBalanceLedgerEntry,
+        StoreBalanceSnapshot, StoreBalanceSummary,
+    };
+    use crate::modules::balances::domain::repository::StoreBalanceRepository;
     use crate::modules::auth::application::dto::{SessionContext, UserProfile};
     use crate::modules::auth::application::service::AuthService;
     use crate::modules::auth::domain::repository::AuthRepository;
@@ -187,6 +193,44 @@ mod tests {
     struct MockStoreTokenRepository {
         stores: Mutex<HashSet<Uuid>>,
         tokens: Mutex<Vec<StoreApiTokenRecord>>,
+    }
+
+    #[derive(Default)]
+    struct NoopStoreBalanceRepository;
+
+    #[async_trait]
+    impl StoreBalanceRepository for NoopStoreBalanceRepository {
+        async fn fetch_store_balance_snapshot(
+            &self,
+            _store_id: Uuid,
+            _user_scope: Option<Uuid>,
+            _global_access: bool,
+        ) -> anyhow::Result<Option<StoreBalanceSnapshot>> {
+            Ok(None)
+        }
+
+        async fn fetch_store_balance_summary(
+            &self,
+            _store_id: Uuid,
+        ) -> anyhow::Result<Option<StoreBalanceSummary>> {
+            Ok(None)
+        }
+
+        async fn apply_summary_delta(
+            &self,
+            _store_id: Uuid,
+            _delta: BalanceSummaryDelta,
+            _updated_at: chrono::DateTime<chrono::Utc>,
+        ) -> anyhow::Result<StoreBalanceSummary> {
+            Err(anyhow::anyhow!("balance summaries are not used in store token route tests"))
+        }
+
+        async fn insert_ledger_entry(
+            &self,
+            _entry: NewStoreBalanceLedgerEntry,
+        ) -> anyhow::Result<StoreBalanceLedgerEntry> {
+            Err(anyhow::anyhow!("balance ledger is not used in store token route tests"))
+        }
     }
 
     #[async_trait]
@@ -489,6 +533,9 @@ mod tests {
             ),
         )));
         let realtime_service = Arc::new(RealtimeService::new(32));
+        let balance_service = Arc::new(StoreBalanceService::new(Arc::new(
+            NoopStoreBalanceRepository,
+        )));
 
         let state = AppState {
             config: Config {
@@ -505,6 +552,7 @@ mod tests {
             db,
             redis,
             auth_service,
+            balance_service,
             notification_service,
             payment_idempotency_service,
             payment_service,

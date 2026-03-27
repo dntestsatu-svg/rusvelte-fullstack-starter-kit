@@ -4,6 +4,8 @@ use crate::infrastructure::db::init_db_pool;
 use crate::infrastructure::provider::config::QrisOtomatisConfig;
 use crate::infrastructure::provider::qris_otomatis::QrisOtomatisProvider;
 use crate::infrastructure::redis::init_redis_pool;
+use crate::modules::balances::application::service::StoreBalanceService;
+use crate::modules::balances::infrastructure::repository::SqlxStoreBalanceRepository;
 use crate::modules::notifications::application::service::NotificationService;
 use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
 use crate::modules::payments::application::service::PaymentService;
@@ -59,6 +61,9 @@ impl Container {
                 audit_repo,
             ),
         );
+        let balance_repository =
+            Arc::new(SqlxStoreBalanceRepository::new(db.clone()));
+        let balance_service = Arc::new(StoreBalanceService::new(balance_repository));
         let store_repo = Arc::new(
             crate::modules::stores::infrastructure::repository::SqlxStoreRepository::new(
                 db.clone(),
@@ -115,6 +120,7 @@ impl Container {
             db,
             redis,
             auth_service,
+            balance_service,
             notification_service,
             payment_idempotency_service,
             payment_service,

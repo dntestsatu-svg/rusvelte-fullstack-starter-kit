@@ -12,6 +12,8 @@ use backend::bootstrap::config::Config;
 use backend::bootstrap::state::AppState;
 use backend::infrastructure::redis::RedisPool;
 use backend::infrastructure::security::captcha::NoOpCaptchaVerifier;
+use backend::modules::balances::application::service::StoreBalanceService;
+use backend::modules::balances::infrastructure::repository::SqlxStoreBalanceRepository;
 use backend::modules::auth::application::dto::{SessionContext, UserProfile};
 use backend::modules::auth::application::service::AuthService;
 use backend::modules::auth::domain::repository::AuthRepository;
@@ -241,6 +243,7 @@ async fn build_harness() -> TestHarness {
     let payment_repository = Arc::new(SqlxPaymentRepository::new(db.clone()));
     let user_repository = Arc::new(SqlxUserRepository::new(db.clone()));
     let notification_repository = Arc::new(SqlxNotificationRepository::new(db.clone()));
+    let balance_repository = Arc::new(SqlxStoreBalanceRepository::new(db.clone()));
     let audit_repository = Arc::new(NoopAuditRepository);
     let captcha = Arc::new(NoOpCaptchaVerifier);
 
@@ -266,6 +269,7 @@ async fn build_harness() -> TestHarness {
         Arc::new(NoopStoreTokenRepository),
         audit_repository,
     ));
+    let balance_service = Arc::new(StoreBalanceService::new(balance_repository));
     let payment_service = Arc::new(PaymentService::new(
         payment_repository.clone(),
         Arc::new(NoopProvider),
@@ -280,6 +284,7 @@ async fn build_harness() -> TestHarness {
         db: db.clone(),
         redis,
         auth_service,
+        balance_service,
         notification_service,
         payment_idempotency_service,
         payment_service,

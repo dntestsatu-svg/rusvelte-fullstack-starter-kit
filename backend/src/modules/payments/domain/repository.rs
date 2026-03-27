@@ -3,10 +3,10 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::modules::payments::domain::entity::{
-    DashboardPaymentDetail, DashboardPaymentSummary, NewPaymentIdempotencyRecord,
-    NewPaymentRecord, NewProviderWebhookEventRecord, Payment, PaymentIdempotencyRecord,
-    PaymentPendingUpdate, PaymentWebhookFinalizeCommand, PaymentWebhookFinalizeOutcome,
-    PaymentWebhookTarget, ProviderWebhookEvent, StoreProviderProfile,
+    DashboardPaymentDetail, DashboardPaymentDistribution, DashboardPaymentSummary,
+    NewPaymentIdempotencyRecord, NewPaymentRecord, NewProviderWebhookEventRecord, Payment,
+    PaymentIdempotencyRecord, PaymentPendingUpdate, PaymentWebhookFinalizeCommand,
+    PaymentWebhookFinalizeOutcome, PaymentWebhookTarget, ProviderWebhookEvent, StoreProviderProfile,
 };
 
 #[async_trait]
@@ -50,6 +50,12 @@ pub trait PaymentRepository: Send + Sync {
         user_scope: Option<Uuid>,
         global_access: bool,
     ) -> anyhow::Result<Option<DashboardPaymentDetail>>;
+
+    async fn count_dashboard_payment_distribution(
+        &self,
+        user_scope: Option<Uuid>,
+        global_access: bool,
+    ) -> anyhow::Result<DashboardPaymentDistribution>;
 
     async fn find_payment_by_provider_trx_id(
         &self,
