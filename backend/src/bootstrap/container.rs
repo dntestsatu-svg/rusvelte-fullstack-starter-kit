@@ -1,7 +1,8 @@
 use super::config::Config;
 use super::state::AppState;
 use crate::infrastructure::db::init_db_pool;
-use crate::infrastructure::provider::qris_otomatis::{QrisOtomatisConfig, QrisOtomatisProvider};
+use crate::infrastructure::provider::config::QrisOtomatisConfig;
+use crate::infrastructure::provider::qris_otomatis::QrisOtomatisProvider;
 use crate::infrastructure::redis::init_redis_pool;
 use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
 use crate::modules::payments::application::service::PaymentService;
@@ -91,7 +92,7 @@ impl Container {
             ),
         );
         let provider_adapter = Arc::new(QrisOtomatisProvider::new(
-            QrisOtomatisConfig::from_app_config(&config),
+            QrisOtomatisConfig::from_app_config(&config)?,
         )?);
         let payment_service = Arc::new(PaymentService::new(
             payment_repository.clone(),

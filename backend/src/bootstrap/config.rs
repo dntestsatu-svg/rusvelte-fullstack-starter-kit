@@ -11,6 +11,7 @@ pub struct Config {
     pub external_api_uuid: String,
     pub external_api_client: String,
     pub external_api_secret: String,
+    pub external_api_timeout_seconds: u64,
 }
 
 impl Config {
@@ -39,6 +40,14 @@ impl Config {
             external_api_uuid: get_env("EXTERNAL_API_UUID")?,
             external_api_client: get_env("EXTERNAL_API_CLIENT")?,
             external_api_secret: get_env("EXTERNAL_API_SECRET")?,
+            external_api_timeout_seconds: env::var("EXTERNAL_API_TIMEOUT_SECONDS")
+                .unwrap_or_else(|_| "5".into())
+                .parse()
+                .map_err(|_| {
+                    AppError::Config(
+                        "EXTERNAL_API_TIMEOUT_SECONDS must be a positive integer".into(),
+                    )
+                })?,
         })
     }
 }

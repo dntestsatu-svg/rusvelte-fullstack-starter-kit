@@ -44,7 +44,10 @@ mod tests {
     use crate::modules::auth::interfaces::http::middlewares::csrf_middleware;
     use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
     use crate::modules::payments::application::provider::{
-        GenerateQrisRequest, GeneratedQris, QrisProviderGateway,
+        CheckDisbursementStatusRequest, CheckPaymentStatusRequest, CheckedDisbursementStatus,
+        CheckedPaymentStatus, GenerateQrisRequest, GeneratedQris, GetBalanceRequest,
+        InquiryBankRequest, InquiryBankResult, PaymentProviderGateway, ProviderBalanceSnapshot,
+        TransferRequest, TransferResult,
     };
     use crate::modules::payments::application::service::PaymentService;
     use crate::modules::store_tokens::application::service::StoreTokenService;
@@ -299,11 +302,43 @@ mod tests {
     struct NoopProvider;
 
     #[async_trait]
-    impl QrisProviderGateway for NoopProvider {
+    impl PaymentProviderGateway for NoopProvider {
         async fn generate_qris(
             &self,
             _request: GenerateQrisRequest,
         ) -> Result<GeneratedQris, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+
+        async fn check_payment_status(
+            &self,
+            _request: CheckPaymentStatusRequest,
+        ) -> Result<CheckedPaymentStatus, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+
+        async fn inquiry_bank(
+            &self,
+            _request: InquiryBankRequest,
+        ) -> Result<InquiryBankResult, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+
+        async fn transfer(&self, _request: TransferRequest) -> Result<TransferResult, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+
+        async fn check_disbursement_status(
+            &self,
+            _request: CheckDisbursementStatusRequest,
+        ) -> Result<CheckedDisbursementStatus, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+
+        async fn get_balance(
+            &self,
+            _request: GetBalanceRequest,
+        ) -> Result<ProviderBalanceSnapshot, AppError> {
             unreachable!("payment service is unused in store token route tests")
         }
     }
@@ -457,6 +492,7 @@ mod tests {
                 external_api_uuid: "test-uuid".into(),
                 external_api_client: "test-client".into(),
                 external_api_secret: "test-secret".into(),
+                external_api_timeout_seconds: 5,
             },
             db,
             redis,

@@ -35,17 +35,22 @@ mod tests {
     use axum::{
         body::{to_bytes, Body},
         http::{Request, StatusCode},
+        Json,
     };
     use bb8::Pool;
     use bb8_redis::{redis::AsyncCommands, RedisConnectionManager};
     use chrono::Utc;
+    use reqwest::Url;
     use serde_json::{json, Value};
     use sqlx::postgres::PgPoolOptions;
+    use tokio::net::TcpListener;
     use tower::ServiceExt;
     use uuid::Uuid;
 
     use super::*;
     use crate::bootstrap::config::Config;
+    use crate::infrastructure::provider::config::QrisOtomatisConfig;
+    use crate::infrastructure::provider::qris_otomatis::QrisOtomatisProvider;
     use crate::infrastructure::security::argon2::hash_secret;
     use crate::modules::auth::application::service::AuthService;
     use crate::modules::auth::domain::repository::AuthRepository;
@@ -53,7 +58,10 @@ mod tests {
     use crate::modules::auth::domain::user::AuthUser;
     use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
     use crate::modules::payments::application::provider::{
-        GenerateQrisRequest, GeneratedQris, QrisProviderGateway,
+        CheckDisbursementStatusRequest, CheckPaymentStatusRequest, CheckedDisbursementStatus,
+        CheckedPaymentStatus, GenerateQrisRequest, GeneratedQris, GetBalanceRequest,
+        InquiryBankRequest, InquiryBankResult, PaymentProviderGateway, ProviderBalanceSnapshot,
+        TransferRequest, TransferResult,
     };
     use crate::modules::payments::application::service::PaymentService;
     use crate::modules::payments::domain::entity::{
@@ -562,7 +570,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl QrisProviderGateway for MockProvider {
+    impl PaymentProviderGateway for MockProvider {
         async fn generate_qris(
             &self,
             _request: GenerateQrisRequest,
@@ -572,6 +580,38 @@ mod tests {
                 provider_trx_id: format!("trx-{}", self.calls.load(Ordering::SeqCst)),
                 qris_payload: "mock-qris-payload".into(),
             })
+        }
+
+        async fn check_payment_status(
+            &self,
+            _request: CheckPaymentStatusRequest,
+        ) -> Result<CheckedPaymentStatus, AppError> {
+            unreachable!("not used in payment route tests")
+        }
+
+        async fn inquiry_bank(
+            &self,
+            _request: InquiryBankRequest,
+        ) -> Result<InquiryBankResult, AppError> {
+            unreachable!("not used in payment route tests")
+        }
+
+        async fn transfer(&self, _request: TransferRequest) -> Result<TransferResult, AppError> {
+            unreachable!("not used in payment route tests")
+        }
+
+        async fn check_disbursement_status(
+            &self,
+            _request: CheckDisbursementStatusRequest,
+        ) -> Result<CheckedDisbursementStatus, AppError> {
+            unreachable!("not used in payment route tests")
+        }
+
+        async fn get_balance(
+            &self,
+            _request: GetBalanceRequest,
+        ) -> Result<ProviderBalanceSnapshot, AppError> {
+            unreachable!("not used in payment route tests")
         }
     }
 
@@ -593,6 +633,14 @@ mod tests {
         payment_repository: Arc<MockPaymentRepository>,
         token_repository: Arc<MockStoreTokenRepository>,
         provider: Arc<MockProvider>,
+    ) -> (Router, Arc<StoreTokenService>, Pool<RedisConnectionManager>) {
+        test_router_with_provider(payment_repository, token_repository, provider)
+    }
+
+    fn test_router_with_provider(
+        payment_repository: Arc<MockPaymentRepository>,
+        token_repository: Arc<MockStoreTokenRepository>,
+        provider: Arc<dyn PaymentProviderGateway>,
     ) -> (Router, Arc<StoreTokenService>, Pool<RedisConnectionManager>) {
         let db = PgPoolOptions::new()
             .connect_lazy("postgres://postgres:postgres@localhost/justqiu_test")
@@ -640,6 +688,7 @@ mod tests {
                 external_api_uuid: "uuid".into(),
                 external_api_client: "client".into(),
                 external_api_secret: "secret".into(),
+                external_api_timeout_seconds: 5,
             },
             db,
             redis: redis.clone(),
@@ -655,6 +704,25 @@ mod tests {
         let app = client_routes(state.clone()).with_state(state);
 
         (app, store_token_service, redis)
+    }
+
+    async fn spawn_real_provider_server() -> String {
+        async fn handle_generate(Json(payload): Json<Value>) -> Json<Value> {
+            Json(json!({
+                "status": true,
+                "data": format!("qris-for-{}", payload["username"].as_str().unwrap_or("unknown")),
+                "trx_id": "real-adapter-trx-1"
+            }))
+        }
+
+        let app = Router::new().route("/api/generate", post(handle_generate));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        format!("http://{addr}/")
     }
 
     async fn create_store_token(
@@ -735,6 +803,55 @@ mod tests {
         assert_eq!(
             payload["payment"]["qris_payload"],
             json!("mock-qris-payload")
+        );
+    }
+
+    #[tokio::test]
+    async fn create_payment_route_still_works_with_real_provider_adapter() {
+        let store_id = Uuid::new_v4();
+        let payment_repository = Arc::new(MockPaymentRepository::default());
+        payment_repository.add_store_profile(store_id, "provider-store");
+        let token_repository = Arc::new(MockStoreTokenRepository::default());
+        token_repository.add_store(store_id);
+        let provider_base_url = spawn_real_provider_server().await;
+        let provider = Arc::new(
+            QrisOtomatisProvider::new(QrisOtomatisConfig {
+                base_url: Url::parse(&provider_base_url).unwrap(),
+                merchant_uuid: "merchant-uuid".into(),
+                client_name: "client-name".into(),
+                client_key: "client-key".into(),
+                timeout: std::time::Duration::from_secs(5),
+            })
+            .unwrap(),
+        );
+        let (app, store_token_service, redis) =
+            test_router_with_provider(payment_repository, token_repository, provider);
+        clear_rate_limit(&redis, store_id).await;
+        let bearer_token = create_store_token(store_token_service, store_id).await;
+
+        let response = create_payment_request(&app, &bearer_token, "idem-real", "order-real").await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        println!(
+            "{}",
+            json!({
+                "payment_id": payload["payment"]["id"],
+                "provider_trx_id": payload["payment"]["provider_trx_id"],
+                "qris_payload": payload["payment"]["qris_payload"],
+                "status": payload["payment"]["status"],
+            })
+        );
+
+        assert_eq!(payload["payment"]["status"], json!("pending"));
+        assert_eq!(
+            payload["payment"]["provider_trx_id"],
+            json!("real-adapter-trx-1")
+        );
+        assert_eq!(
+            payload["payment"]["qris_payload"],
+            json!("qris-for-provider-store")
         );
     }
 

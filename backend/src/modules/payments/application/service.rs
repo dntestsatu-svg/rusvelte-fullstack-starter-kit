@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::Error as SqlxError;
 use uuid::Uuid;
 
-use crate::modules::payments::application::provider::{GenerateQrisRequest, QrisProviderGateway};
+use crate::modules::payments::application::provider::{
+    GenerateQrisRequest, PaymentProviderGateway,
+};
 use crate::modules::payments::domain::entity::{
     payment_to_detail, payment_to_status_view, ClientPaymentDetail, ClientPaymentStatusView,
     NewPaymentRecord, PaymentPendingUpdate, PaymentStatus, StoreProviderProfile,
@@ -61,13 +63,13 @@ impl CreateClientPaymentRequest {
 
 pub struct PaymentService {
     repository: Arc<dyn PaymentRepository>,
-    provider: Arc<dyn QrisProviderGateway>,
+    provider: Arc<dyn PaymentProviderGateway>,
 }
 
 impl PaymentService {
     pub fn new(
         repository: Arc<dyn PaymentRepository>,
-        provider: Arc<dyn QrisProviderGateway>,
+        provider: Arc<dyn PaymentProviderGateway>,
     ) -> Self {
         Self {
             repository,
@@ -217,6 +219,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
+    use crate::modules::payments::application::provider::GeneratedQris;
     use crate::modules::payments::domain::entity::Payment;
 
     #[derive(Default)]
@@ -349,24 +352,65 @@ mod tests {
     }
 
     #[async_trait]
-    impl QrisProviderGateway for MockProvider {
+    impl PaymentProviderGateway for MockProvider {
         async fn generate_qris(
             &self,
             _request: GenerateQrisRequest,
-        ) -> Result<crate::modules::payments::application::provider::GeneratedQris, AppError>
-        {
+        ) -> Result<GeneratedQris, AppError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             match self.mode {
-                MockProviderMode::Success => Ok(
-                    crate::modules::payments::application::provider::GeneratedQris {
-                        provider_trx_id: "trx_123".into(),
-                        qris_payload: "qris-payload".into(),
-                    },
-                ),
+                MockProviderMode::Success => Ok(GeneratedQris {
+                    provider_trx_id: "trx_123".into(),
+                    qris_payload: "qris-payload".into(),
+                }),
                 MockProviderMode::Failure => Err(AppError::BadRequest(
                     "Provider rejected QRIS generate request: maintenance".into(),
                 )),
             }
+        }
+
+        async fn check_payment_status(
+            &self,
+            _request: crate::modules::payments::application::provider::CheckPaymentStatusRequest,
+        ) -> Result<crate::modules::payments::application::provider::CheckedPaymentStatus, AppError>
+        {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn inquiry_bank(
+            &self,
+            _request: crate::modules::payments::application::provider::InquiryBankRequest,
+        ) -> Result<crate::modules::payments::application::provider::InquiryBankResult, AppError>
+        {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn transfer(
+            &self,
+            _request: crate::modules::payments::application::provider::TransferRequest,
+        ) -> Result<crate::modules::payments::application::provider::TransferResult, AppError>
+        {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn check_disbursement_status(
+            &self,
+            _request: crate::modules::payments::application::provider::CheckDisbursementStatusRequest,
+        ) -> Result<
+            crate::modules::payments::application::provider::CheckedDisbursementStatus,
+            AppError,
+        > {
+            unreachable!("not used in payment service tests")
+        }
+
+        async fn get_balance(
+            &self,
+            _request: crate::modules::payments::application::provider::GetBalanceRequest,
+        ) -> Result<
+            crate::modules::payments::application::provider::ProviderBalanceSnapshot,
+            AppError,
+        > {
+            unreachable!("not used in payment service tests")
         }
     }
 
