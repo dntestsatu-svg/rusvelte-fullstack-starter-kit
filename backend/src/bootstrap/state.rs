@@ -2,6 +2,8 @@ use super::config::Config;
 use crate::infrastructure::db::DbPool;
 use crate::infrastructure::redis::RedisPool;
 use crate::modules::auth::application::service::AuthService;
+use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
+use crate::modules::payments::application::service::PaymentService;
 use crate::modules::store_tokens::application::service::StoreTokenService;
 use crate::modules::stores::application::service::StoreService;
 use crate::modules::support::application::service::SupportService;
@@ -14,6 +16,8 @@ pub struct AppState {
     pub db: DbPool,
     pub redis: RedisPool,
     pub auth_service: Arc<AuthService>,
+    pub payment_idempotency_service: Arc<PaymentIdempotencyService>,
+    pub payment_service: Arc<PaymentService>,
     pub store_service: Arc<StoreService>,
     pub store_token_service: Arc<StoreTokenService>,
     pub support_service: Arc<SupportService>,

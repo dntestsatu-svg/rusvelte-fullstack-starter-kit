@@ -42,6 +42,11 @@ mod tests {
     use crate::modules::auth::domain::session::Session;
     use crate::modules::auth::domain::user::AuthUser;
     use crate::modules::auth::interfaces::http::middlewares::csrf_middleware;
+    use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
+    use crate::modules::payments::application::provider::{
+        GenerateQrisRequest, GeneratedQris, QrisProviderGateway,
+    };
+    use crate::modules::payments::application::service::PaymentService;
     use crate::modules::store_tokens::application::service::StoreTokenService;
     use crate::modules::store_tokens::domain::entity::{
         NewStoreApiTokenRecord, StoreApiTokenRecord,
@@ -59,6 +64,7 @@ mod tests {
     use crate::modules::users::domain::repository::UserRepository;
     use crate::shared::audit::{AuditLogEntry, AuditLogRepository};
     use crate::shared::auth::{PlatformRole, StoreRole};
+    use crate::shared::error::AppError;
 
     #[derive(Default)]
     struct MockAuditRepository;
@@ -290,6 +296,18 @@ mod tests {
 
     struct NoopStoreRepository;
 
+    struct NoopProvider;
+
+    #[async_trait]
+    impl QrisProviderGateway for NoopProvider {
+        async fn generate_qris(
+            &self,
+            _request: GenerateQrisRequest,
+        ) -> Result<GeneratedQris, AppError> {
+            unreachable!("payment service is unused in store token route tests")
+        }
+    }
+
     #[async_trait]
     impl StoreRepository for NoopStoreRepository {
         async fn list_stores(
@@ -417,6 +435,17 @@ mod tests {
             token_repository,
             Arc::new(MockAuditRepository),
         ));
+        let payment_repository = Arc::new(
+            crate::modules::payments::infrastructure::repository::SqlxPaymentRepository::new(
+                db.clone(),
+            ),
+        );
+        let payment_service = Arc::new(PaymentService::new(
+            payment_repository.clone(),
+            Arc::new(NoopProvider),
+        ));
+        let payment_idempotency_service =
+            Arc::new(PaymentIdempotencyService::new(payment_repository));
 
         let state = AppState {
             config: Config {
@@ -432,6 +461,8 @@ mod tests {
             db,
             redis,
             auth_service,
+            payment_idempotency_service,
+            payment_service,
             store_service,
             store_token_service,
             support_service,

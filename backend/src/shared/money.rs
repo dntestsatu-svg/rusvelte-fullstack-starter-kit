@@ -33,7 +33,7 @@ pub fn percentage_fee(amount: i64, bps: i64) -> i64 {
     (amount * bps) / 10000
 }
 
-pub fn payment_success_breakdown(gross: i64) -> PaymentFeeBreakdown {
+pub fn payment_fee_breakdown(gross: i64) -> PaymentFeeBreakdown {
     let bps = 300; // 3.00%
     let platform_fee = percentage_fee(gross, bps as i64);
     let store_pending = gross - platform_fee;
@@ -44,6 +44,10 @@ pub fn payment_success_breakdown(gross: i64) -> PaymentFeeBreakdown {
         platform_fee_amount: platform_fee,
         store_pending_amount: store_pending,
     }
+}
+
+pub fn payment_success_breakdown(gross: i64) -> PaymentFeeBreakdown {
+    payment_fee_breakdown(gross)
 }
 
 pub fn withdraw_breakdown(requested: i64, provider_fee: i64) -> WithdrawBreakdown {
@@ -89,9 +93,13 @@ mod tests {
 
     #[test]
     fn test_payment_breakdown() {
-        let b = payment_success_breakdown(100_000);
+        let b = payment_fee_breakdown(100_000);
         assert_eq!(b.platform_fee_amount, 3_000);
         assert_eq!(b.store_pending_amount, 97_000);
+
+        let uneven = payment_fee_breakdown(10_001);
+        assert_eq!(uneven.platform_fee_amount, 300);
+        assert_eq!(uneven.store_pending_amount, 9_701);
     }
 
     #[test]

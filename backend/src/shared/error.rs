@@ -32,30 +32,58 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
+
     #[error("Configuration error: {0}")]
     Config(String),
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, error_type) = match &self {
-            AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
-            AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database_error"),
-            AppError::Redis(_) => (StatusCode::INTERNAL_SERVER_ERROR, "redis_error"),
-            AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
-            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
-            AppError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, "unauthorized"),
-            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
-            AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
-            AppError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "config_error"),
-        };
+impl AppError {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Redis(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
+            AppError::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 
-        let body = Json(json!({
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            AppError::Internal(_) => "internal_error",
+            AppError::Database(_) => "database_error",
+            AppError::Redis(_) => "redis_error",
+            AppError::NotFound(_) => "not_found",
+            AppError::BadRequest(_) => "bad_request",
+            AppError::Unauthorized(_) => "unauthorized",
+            AppError::Forbidden(_) => "forbidden",
+            AppError::Conflict(_) => "conflict",
+            AppError::TooManyRequests(_) => "too_many_requests",
+            AppError::Config(_) => "config_error",
+        }
+    }
+
+    pub fn body_json(&self) -> serde_json::Value {
+        json!({
             "error": {
-                "type": error_type,
+                "type": self.error_type(),
                 "message": self.to_string(),
             }
-        }));
+        })
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = self.status_code();
+        let body = Json(self.body_json());
 
         (status, body).into_response()
     }

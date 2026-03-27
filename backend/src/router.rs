@@ -64,12 +64,17 @@ pub fn create_router(state: SharedState) -> Router {
             inner_state.clone(),
             rate_limit_middleware,
         ));
+    let client_api_routes = Router::new().nest(
+        "/client",
+        crate::modules::payments::client_routes(inner_state.clone()),
+    );
 
     Router::new()
         .nest(
             "/api/v1",
             Router::new()
                 .merge(auth_api_routes)
+                .merge(client_api_routes)
                 .merge(protected_api_routes),
         )
         .nest(
