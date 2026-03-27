@@ -9,6 +9,8 @@ use crate::modules::balances::infrastructure::repository::SqlxStoreBalanceReposi
 use crate::modules::notifications::application::service::NotificationService;
 use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
 use crate::modules::payments::application::service::PaymentService;
+use crate::modules::payouts::application::service::PayoutService;
+use crate::modules::payouts::infrastructure::repository::SqlxPayoutRepository;
 use crate::modules::realtime::application::service::RealtimeService;
 use crate::modules::settlements::application::service::SettlementService;
 use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
@@ -68,7 +70,7 @@ impl Container {
         );
         let balance_repository =
             Arc::new(SqlxStoreBalanceRepository::new(db.clone()));
-        let balance_service = Arc::new(StoreBalanceService::new(balance_repository));
+        let balance_service = Arc::new(StoreBalanceService::new(balance_repository.clone()));
         let store_repo = Arc::new(
             crate::modules::stores::infrastructure::repository::SqlxStoreRepository::new(
                 db.clone(),
@@ -119,14 +121,14 @@ impl Container {
             crate::infrastructure::audit::SqlxAuditLogRepository::new(db.clone()),
         );
         let store_bank_service = Arc::new(StoreBankService::new(
-            store_bank_repository,
+            store_bank_repository.clone(),
             Arc::new(RedisStoreBankInquiryCache::new(redis.clone())),
             provider_adapter.clone(),
             store_bank_audit_repo,
         ));
         let payment_service = Arc::new(PaymentService::new(
             payment_repository.clone(),
-            provider_adapter,
+            provider_adapter.clone(),
         ));
         let payment_idempotency_service =
             Arc::new(PaymentIdempotencyService::new(payment_repository));
@@ -135,6 +137,17 @@ impl Container {
         let settlement_repository =
             Arc::new(SqlxSettlementRepository::new(db.clone()));
         let settlement_service = Arc::new(SettlementService::new(settlement_repository));
+        let payout_repository = Arc::new(SqlxPayoutRepository::new(db.clone()));
+        let payout_audit_repo = Arc::new(crate::infrastructure::audit::SqlxAuditLogRepository::new(
+            db.clone(),
+        ));
+        let payout_service = Arc::new(PayoutService::new(
+            payout_repository,
+            balance_repository,
+            store_bank_repository,
+            provider_adapter,
+            payout_audit_repo,
+        ));
 
         let state = Arc::new(AppState {
             config,
@@ -143,6 +156,7 @@ impl Container {
             auth_service,
             balance_service,
             notification_service,
+            payout_service,
             payment_idempotency_service,
             payment_service,
             realtime_service,

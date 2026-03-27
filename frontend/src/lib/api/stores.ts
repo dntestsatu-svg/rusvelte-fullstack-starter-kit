@@ -72,6 +72,55 @@ export interface StoreBalanceSnapshot {
     updated_at: string;
 }
 
+export interface PayoutPreview {
+    bank_account_id: string;
+    bank_name: string;
+    account_holder_name: string;
+    account_number_last4: string;
+    requested_amount: number;
+    platform_withdraw_fee_bps: number;
+    platform_withdraw_fee_amount: number;
+    provider_withdraw_fee_amount: number;
+    net_disbursed_amount: number;
+    withdrawable_balance: number;
+    provider_partner_ref_no: string;
+    provider_inquiry_id: number;
+}
+
+export interface PayoutListRow {
+    id: string;
+    store_id: string;
+    requested_amount: number;
+    platform_withdraw_fee_amount: number;
+    provider_withdraw_fee_amount: number;
+    net_disbursed_amount: number;
+    status: string;
+    bank_name: string;
+    account_number_last4: string;
+    account_holder_name: string;
+    created_at: string;
+}
+
+export interface PayoutRecord {
+    id: string;
+    store_id: string;
+    bank_account_id: string;
+    requested_by_user_id: string;
+    requested_amount: number;
+    platform_withdraw_fee_bps: number;
+    platform_withdraw_fee_amount: number;
+    provider_withdraw_fee_amount: number;
+    net_disbursed_amount: number;
+    provider_partner_ref_no: string;
+    provider_inquiry_id: number;
+    status: string;
+    failure_reason?: string | null;
+    provider_transaction_date?: string | null;
+    processed_at?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface StoreListResponse {
     stores: Store[];
     total: number;
@@ -193,5 +242,37 @@ export const storesApi = {
 
     getBalances: async (id: string) => {
         return client.get<{ balance: StoreBalanceSnapshot }>(`/api/v1/stores/${id}/balances`);
+    },
+
+    previewPayout: async (
+        id: string,
+        data: {
+            bank_account_id: string;
+            requested_amount: number;
+        }
+    ) => {
+        return client.post<{ preview: PayoutPreview }>(`/api/v1/stores/${id}/payouts/preview`, data);
+    },
+
+    confirmPayout: async (
+        id: string,
+        data: {
+            bank_account_id: string;
+            requested_amount: number;
+        }
+    ) => {
+        return client.post<{ payout: PayoutRecord }>(`/api/v1/stores/${id}/payouts`, data);
+    },
+
+    listPayouts: async (id: string, params?: { limit?: number; offset?: number }) => {
+        const query = new URLSearchParams();
+        if (params?.limit) query.append('limit', params.limit.toString());
+        if (params?.offset) query.append('offset', params.offset.toString());
+        const qs = query.toString();
+        return client.get<{ payouts: PayoutListRow[] }>(`/api/v1/stores/${id}/payouts${qs ? `?${qs}` : ''}`);
+    },
+
+    getPayoutDetail: async (id: string, payoutId: string) => {
+        return client.get<{ payout: PayoutRecord }>(`/api/v1/stores/${id}/payouts/${payoutId}`);
     }
 };

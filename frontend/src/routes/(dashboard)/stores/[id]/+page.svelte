@@ -3,6 +3,7 @@
     import { page } from '$app/state';
     import { storesApi, type Store, type StoreMember } from '$lib/api/stores';
     import StoreBanksPanel from '$lib/components/stores/StoreBanksPanel.svelte';
+    import StorePayoutsPanel from '$lib/components/stores/StorePayoutsPanel.svelte';
     import StoreTokensPanel from '$lib/components/stores/StoreTokensPanel.svelte';
     import { Badge } from '$lib/components/ui/badge';
     import { Button } from '$lib/components/ui/button';
@@ -50,7 +51,7 @@
     let providerUsername = $state('');
     let status = $state<'active' | 'inactive'>('active');
     let editedRoles = $state<Record<string, StoreMember['store_role']>>({});
-    let activeStoreTab = $state<'members' | 'tokens' | 'banks'>('members');
+    let activeStoreTab = $state<'members' | 'tokens' | 'banks' | 'payouts'>('members');
 
     const isDev = $derived(page.data.sessionUser?.role === 'dev');
     const isOwner = $derived(store?.owner_user_id === page.data.sessionUser?.id);
@@ -84,6 +85,9 @@
             activeStoreTab = 'members';
         }
         if (!canMirrorStoreBanks && activeStoreTab === 'banks') {
+            activeStoreTab = 'members';
+        }
+        if (!canMirrorStoreBanks && activeStoreTab === 'payouts') {
             activeStoreTab = 'members';
         }
     });
@@ -324,6 +328,8 @@
                                     Members
                                 {:else if activeStoreTab === 'tokens'}
                                     Tokens
+                                {:else if activeStoreTab === 'payouts'}
+                                    Payouts
                                 {:else}
                                     Banks
                                 {/if}
@@ -333,6 +339,8 @@
                                     Owner is managed automatically. Additional members are scoped to this store.
                                 {:else if activeStoreTab === 'banks'}
                                     Verified payout destination accounts stay encrypted at rest and only show masked last4 in this dashboard.
+                                {:else if activeStoreTab === 'payouts'}
+                                    Preview fee breakdowns, confirm withdrawals, and track payout status.
                                 {:else}
                                     Manage active bearer tokens for Store Client API access.
                                 {/if}
@@ -365,6 +373,19 @@
                                         Banks
                                     </button>
                                 {/if}
+                                {#if canMirrorStoreBanks}
+                                    <button
+                                        type="button"
+                                        class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                            activeStoreTab === 'payouts'
+                                                ? 'bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground'
+                                        }`}
+                                        onclick={() => activeStoreTab = 'payouts'}
+                                    >
+                                        Payouts
+                                    </button>
+                                {/if}
                                 {#if canMirrorStoreTokens}
                                     <button
                                         type="button"
@@ -383,7 +404,9 @@
                     </div>
                 </CardHeader>
                 <CardContent class="space-y-4">
-                    {#if activeStoreTab === 'banks'}
+                    {#if activeStoreTab === 'payouts'}
+                        <StorePayoutsPanel storeId={storeId} canManage={canManageBanks} />
+                    {:else if activeStoreTab === 'banks'}
                         <StoreBanksPanel storeId={storeId} canManage={canManageBanks} />
                     {:else if activeStoreTab === 'tokens'}
                         <StoreTokensPanel storeId={storeId} />

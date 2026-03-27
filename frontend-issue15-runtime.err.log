@@ -1,0 +1,10 @@
+$ vite --host "127.0.0.1" --port "5173"
+
+[1;31m[404] GET /favicon.png[0m
+[2m1:34:51 PM[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/realtime/stream[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m2:02:37 PM[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/realtime/stream[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+error: script "dev" exited with code 58

@@ -33,6 +33,8 @@ use backend::modules::payments::infrastructure::repository::SqlxPaymentRepositor
 use backend::modules::realtime::application::service::RealtimeService;
 use backend::modules::settlements::application::service::SettlementService;
 use backend::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+use backend::modules::payouts::application::service::PayoutService;
+use backend::modules::payouts::infrastructure::repository::SqlxPayoutRepository;
 use backend::modules::store_banks::application::service::StoreBankService;
 use backend::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
 use backend::modules::store_tokens::application::service::StoreTokenService;
@@ -315,6 +317,16 @@ async fn build_harness() -> TestHarness {
         Arc::new(NoopStoreTokenRepository),
         audit_repository,
     ));
+    let payout_service = Arc::new(PayoutService::new(
+        Arc::new(SqlxPayoutRepository::new(db.clone())),
+        Arc::new(SqlxStoreBalanceRepository::new(db.clone())),
+        Arc::new(SqlxStoreBankRepository::new(
+            db.clone(),
+            base_config.store_bank_account_encryption_key.clone(),
+        )),
+        Arc::new(provider.clone()),
+        Arc::new(NoopAuditRepository),
+    ));
 
     let state = AppState {
         config: base_config,
@@ -323,6 +335,7 @@ async fn build_harness() -> TestHarness {
         auth_service,
         balance_service,
         notification_service,
+        payout_service,
         payment_idempotency_service,
         payment_service,
         realtime_service,

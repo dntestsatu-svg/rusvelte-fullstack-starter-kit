@@ -2,6 +2,7 @@ pub mod auth;
 pub mod balances;
 pub mod notifications;
 pub mod payments;
+pub mod payouts;
 pub mod realtime;
 pub mod settlements;
 pub mod store_banks;

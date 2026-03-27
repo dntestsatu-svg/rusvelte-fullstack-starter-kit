@@ -60,6 +60,7 @@ mod tests {
     use crate::modules::realtime::application::service::RealtimeService;
     use crate::modules::settlements::application::service::SettlementService;
     use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
+    use crate::modules::payouts::application::service::PayoutService;
     use crate::modules::store_banks::application::service::StoreBankService;
     use crate::modules::store_banks::infrastructure::repository::SqlxStoreBankRepository;
     use crate::modules::store_tokens::application::service::StoreTokenService;
@@ -556,6 +557,16 @@ mod tests {
             Arc::new(NoopProvider),
             Arc::new(MockAuditRepository),
         ));
+        let payout_service = Arc::new(PayoutService::new(
+            Arc::new(crate::modules::payouts::infrastructure::repository::SqlxPayoutRepository::new(db.clone())),
+            Arc::new(NoopStoreBalanceRepository),
+            Arc::new(SqlxStoreBankRepository::new(
+                db.clone(),
+                "bank-test-key".into(),
+            )),
+            Arc::new(NoopProvider),
+            Arc::new(MockAuditRepository),
+        ));
 
         let state = AppState {
             config: Config {
@@ -575,6 +586,7 @@ mod tests {
             auth_service,
             balance_service,
             notification_service,
+            payout_service,
             payment_idempotency_service,
             payment_service,
             realtime_service,
