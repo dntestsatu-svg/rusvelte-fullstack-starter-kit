@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use redis::{AsyncCommands, RedisError};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum IdempotencyStatus {
@@ -16,7 +16,7 @@ where
 {
     let full_key = format!("idempotency:{}", key);
     let val: Option<String> = redis.get(&full_key).await?;
-    
+
     match val {
         Some(s) if s == "PENDING" => Ok(Some(IdempotencyStatus::Pending)),
         Some(s) => Ok(Some(IdempotencyStatus::Completed(s))),

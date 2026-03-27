@@ -15,12 +15,7 @@
      */
     "allowJs": true,
     "checkJs": true,
-    "moduleDetection": "force",
-    "baseUrl": ".",
-    "paths": {
-      "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"]
-    }
+    "moduleDetection": "force"
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
 }

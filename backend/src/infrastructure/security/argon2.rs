@@ -15,7 +15,7 @@ pub enum HashError {
 pub fn hash_password(password: &str) -> Result<String, HashError> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    
+
     argon2
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
@@ -25,7 +25,17 @@ pub fn hash_password(password: &str) -> Result<String, HashError> {
 pub fn verify_password(password: &str, hash: &str) -> bool {
     let argon2 = Argon2::default();
     match PasswordHash::new(hash) {
-        Ok(parsed_hash) => argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok(),
+        Ok(parsed_hash) => argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok(),
         Err(_) => false,
     }
+}
+
+pub fn hash_secret(secret: &str) -> Result<String, HashError> {
+    hash_password(secret)
+}
+
+pub fn verify_secret(secret: &str, hash: &str) -> bool {
+    verify_password(secret, hash)
 }

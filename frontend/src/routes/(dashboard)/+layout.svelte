@@ -1,16 +1,19 @@
 <script lang="ts">
-	import { page } from "$app/state";
-	import { protectRoute } from "$lib/auth/guard.js";
+	import { browser } from "$app/environment";
+	import { authStore } from "$lib/auth/store";
 	import DashboardLayout from "$lib/layouts/DashboardLayout.svelte";
 
-	let { children } = $props();
+let { children, data } = $props();
 
-	// Protect all routes in this group
 	$effect(() => {
-		protectRoute(page.url);
+		if (!browser) {
+			return;
+		}
+
+		authStore.setAuth(data.sessionUser);
 	});
 </script>
 
-<DashboardLayout>
+<DashboardLayout sessionUser={data.sessionUser}>
 	{@render children()}
 </DashboardLayout>

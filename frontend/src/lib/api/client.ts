@@ -2,8 +2,22 @@
  * Minimal API client for JustQiu Issue #5.
  * Handles credential inclusion and CSRF token injection.
  */
-export async function apiFetch(url: string, options: RequestInit = {}) {
+export class ApiError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+	}
+}
+
+export async function apiFetch<T = unknown>(url: string, options: RequestInit = {}): Promise<T> {
 	const headers = new Headers(options.headers);
+
+	if (options.body && !headers.has('Content-Type')) {
+		headers.set('Content-Type', 'application/json');
+	}
 	
 	// Inject CSRF token from a cookie or meta tag if available
 	// For now, we assume it's available in a known COOKIE or provided globally
@@ -18,13 +32,38 @@ export async function apiFetch(url: string, options: RequestInit = {}) {
 		credentials: 'include' // Required for session-based auth
 	});
 
+	const rawBody = await response.text();
+	const contentType = response.headers.get('content-type') ?? '';
+	const parsedBody = rawBody
+		? contentType.includes('application/json')
+			? JSON.parse(rawBody)
+			: rawBody
+		: undefined;
+
 	if (!response.ok) {
-		const error = await response.json().catch(() => ({ message: 'An unexpected error occurred' }));
-		throw new Error(error.message || 'API request failed');
+		const message =
+			typeof parsedBody === 'object' && parsedBody !== null
+				? ((parsedBody as { error?: { message?: string }; message?: string }).error?.message ??
+					(parsedBody as { message?: string }).message ??
+					'API request failed')
+				: (parsedBody as string | undefined) ?? 'API request failed';
+		throw new ApiError(message, response.status);
 	}
 
-	return response.json();
+	return parsedBody as T;
 }
+
+/**
+ * Client object for easier imports in components
+ */
+export const client = {
+	get: <T>(url: string) => apiFetch<T>(url, { method: 'GET' }),
+	post: <T>(url: string, body?: unknown) =>
+		apiFetch<T>(url, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+	put: <T>(url: string, body: unknown) => apiFetch<T>(url, { method: 'PUT', body: JSON.stringify(body) }),
+	delete: <T>(url: string) => apiFetch<T>(url, { method: 'DELETE' }),
+	patch: <T>(url: string, body: unknown) => apiFetch<T>(url, { method: 'PATCH', body: JSON.stringify(body) }),
+};
 
 function getCsrfToken(): string | null {
 	if (typeof document === 'undefined') return null;

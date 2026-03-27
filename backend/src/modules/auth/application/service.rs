@@ -1,13 +1,13 @@
-use std::sync::Arc;
-use chrono::{Utc, Duration};
-use uuid::Uuid;
+use super::dto::{LoginRequest, LoginResponse, SessionContext, UserProfile};
 use crate::infrastructure::security::argon2::verify_password;
 use crate::infrastructure::security::captcha::CaptchaVerifier;
 use crate::infrastructure::security::csrf::generate_csrf_token;
 use crate::modules::auth::domain::repository::AuthRepository;
 use crate::modules::auth::domain::session::Session;
-use super::dto::{LoginRequest, LoginResponse, UserProfile, SessionContext};
+use chrono::{Duration, Utc};
 use redis::AsyncCommands;
+use std::sync::Arc;
+use uuid::Uuid;
 
 pub struct AuthService {
     repo: Arc<dyn AuthRepository>,
@@ -21,10 +21,16 @@ impl AuthService {
         captcha: Arc<dyn CaptchaVerifier>,
         redis_pool: bb8::Pool<bb8_redis::RedisConnectionManager>,
     ) -> Self {
-        Self { repo, captcha, redis_pool }
+        Self {
+            repo,
+            captcha,
+            redis_pool,
+        }
     }
 
-    pub async fn get_redis_conn(&self) -> anyhow::Result<bb8::PooledConnection<'_, bb8_redis::RedisConnectionManager>> {
+    pub async fn get_redis_conn(
+        &self,
+    ) -> anyhow::Result<bb8::PooledConnection<'_, bb8_redis::RedisConnectionManager>> {
         let conn = self.redis_pool.get().await?;
         Ok(conn)
     }
@@ -36,8 +42,16 @@ impl AuthService {
         }
 
         // 2. Find user
-        let user = self.repo.find_user_by_email(&req.email).await?
+        let user = self
+            .repo
+            .find_user_by_email(&req.email)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Invalid credentials"))?;
+
+        // Only active users are allowed to establish a session.
+        if user.status != "active" {
+            return Err(anyhow::anyhow!("Account is not active"));
+        }
 
         // 3. Verify password
         if !verify_password(&req.password, &user.password_hash) {
@@ -58,6 +72,7 @@ impl AuthService {
         };
 
         self.repo.create_session(&session).await?;
+        self.repo.update_last_login(user.id).await?;
 
         // 5. Build context and cache in Redis
         let profile = UserProfile {
@@ -89,7 +104,10 @@ impl AuthService {
         Ok(())
     }
 
-    pub async fn resolve_session(&self, session_id: Uuid) -> anyhow::Result<Option<SessionContext>> {
+    pub async fn resolve_session(
+        &self,
+        session_id: Uuid,
+    ) -> anyhow::Result<Option<SessionContext>> {
         // 1. Try Redis
         if let Some(ctx) = self.get_cached_session(session_id).await? {
             return Ok(Some(ctx));
@@ -100,11 +118,18 @@ impl AuthService {
         if let Some(s) = session {
             if s.is_expired() {
                 let _ = self.repo.delete_session(session_id).await;
+                let _ = self.evict_session(session_id).await;
                 return Ok(None);
             }
 
             let user = self.repo.find_user_by_id(s.user_id).await?;
             if let Some(u) = user {
+                if u.status != "active" {
+                    let _ = self.repo.delete_session(session_id).await;
+                    let _ = self.evict_session(session_id).await;
+                    return Ok(None);
+                }
+
                 let ctx = SessionContext {
                     session_id: s.id,
                     user: UserProfile {
@@ -125,12 +150,16 @@ impl AuthService {
         Ok(None)
     }
 
-    async fn cache_session(&self, ctx: &SessionContext, expires_at: chrono::DateTime<Utc>) -> anyhow::Result<()> {
+    async fn cache_session(
+        &self,
+        ctx: &SessionContext,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<()> {
         let mut conn = self.redis_pool.get().await?;
         let key = format!("session:{}", ctx.session_id);
         let val = serde_json::to_string(ctx)?;
         let ttl = (expires_at - Utc::now()).num_seconds().max(0) as u64;
-        
+
         let _: () = conn.set_ex(key, val, ttl).await?;
         Ok(())
     }
@@ -139,7 +168,7 @@ impl AuthService {
         let mut conn = self.redis_pool.get().await?;
         let key = format!("session:{}", session_id);
         let val: Option<String> = conn.get(key).await?;
-        
+
         match val {
             Some(s) => Ok(Some(serde_json::from_str(&s)?)),
             None => Ok(None),

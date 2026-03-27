@@ -9,13 +9,17 @@ async fn main() -> anyhow::Result<()> {
 
     println!("--- CLEAN ROOM RESET: Option A ---");
     println!("Dropping schema public...");
-    sqlx::query("DROP SCHEMA public CASCADE").execute(&pool).await?;
-    
+    sqlx::query("DROP SCHEMA public CASCADE")
+        .execute(&pool)
+        .await?;
+
     println!("Creating schema public...");
     sqlx::query("CREATE SCHEMA public").execute(&pool).await?;
-    
+
     println!("Granting privileges...");
-    sqlx::query("GRANT ALL ON SCHEMA public TO public").execute(&pool).await?;
+    sqlx::query("GRANT ALL ON SCHEMA public TO public")
+        .execute(&pool)
+        .await?;
 
     println!("Running repository migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;

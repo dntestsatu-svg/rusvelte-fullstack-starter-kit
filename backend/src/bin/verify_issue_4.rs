@@ -1,13 +1,13 @@
-use std::sync::Arc;
 use backend::bootstrap::config::Config;
 use backend::infrastructure::db::init_db_pool;
 use backend::infrastructure::redis::init_redis_pool;
-use backend::modules::auth::application::dto::LoginRequest;
-use backend::modules::auth::application::service::AuthService;
-use backend::modules::auth::infrastructure::persistence::PostgresAuthRepository;
 use backend::infrastructure::security::captcha::NoOpCaptchaVerifier;
 use backend::infrastructure::security::limiter::SlidingWindowLimiter;
+use backend::modules::auth::application::dto::LoginRequest;
+use backend::modules::auth::application::service::AuthService;
 use backend::modules::auth::domain::repository::AuthRepository;
+use backend::modules::auth::infrastructure::persistence::PostgresAuthRepository;
+use std::sync::Arc;
 
 // Strictly proof-only. No repair logic. No manual seeding.
 fn main() {
@@ -23,9 +23,10 @@ fn main() {
 async fn run_proof() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     let config = Config::from_env()?;
-    
+
     let db: backend::infrastructure::db::DbPool = init_db_pool(&config.database_url).await?;
-    let redis: backend::infrastructure::redis::RedisPool = init_redis_pool(&config.redis_url).await?;
+    let redis: backend::infrastructure::redis::RedisPool =
+        init_redis_pool(&config.redis_url).await?;
 
     let repo = Arc::new(PostgresAuthRepository::new(db.clone()));
     let captcha = Arc::new(NoOpCaptchaVerifier);
@@ -43,13 +44,23 @@ async fn run_proof() -> anyhow::Result<()> {
     println!("[PASS] Schema: 'csrf_token' column exists in 'sessions' table.");
 
     // 2. Seed Check: exactly 1 dev user
-    let dev_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'dev'").fetch_one(&db).await?;
+    let dev_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'dev'")
+        .fetch_one(&db)
+        .await?;
     if dev_count.0 != 1 {
-        anyhow::bail!("SEED PROOF FAILED: expected exactly 1 dev user, found {}!", dev_count.0);
+        anyhow::bail!(
+            "SEED PROOF FAILED: expected exactly 1 dev user, found {}!",
+            dev_count.0
+        );
     }
-    let dev_user = repo.find_user_by_email("dev@justqiu.com").await?
+    let dev_user = repo
+        .find_user_by_email("dev@justqiu.com")
+        .await?
         .ok_or_else(|| anyhow::anyhow!("SEED PROOF FAILED: dev@justqiu.com not found!"))?;
-    println!("[PASS] Seed: Exactly 1 dev user exists ({})", dev_user.email);
+    println!(
+        "[PASS] Seed: Exactly 1 dev user exists ({})",
+        dev_user.email
+    );
 
     // 3. Login Proof: Valid Credentials -> 200
     let login_req = LoginRequest {
@@ -58,13 +69,20 @@ async fn run_proof() -> anyhow::Result<()> {
         captcha_token: "dev-pass".to_string(),
     };
     let login_res = service.login(login_req).await?;
-    println!("[PASS] Login: Valid credentials returns 200 equivalent. User: {}", login_res.user.email);
+    println!(
+        "[PASS] Login: Valid credentials returns 200 equivalent. User: {}",
+        login_res.user.email
+    );
     let session_id = login_res.session_id;
 
     // 4. Session Context Proof: GET /me equivalent
-    let context = service.resolve_session(session_id).await?
-        .ok_or_else(|| anyhow::anyhow!("SESSION PROOF FAILED: valid session not found in Cache/DB!"))?;
-    println!("[PASS] Session: Resolved valid session for {}", context.user.email);
+    let context = service.resolve_session(session_id).await?.ok_or_else(|| {
+        anyhow::anyhow!("SESSION PROOF FAILED: valid session not found in Cache/DB!")
+    })?;
+    println!(
+        "[PASS] Session: Resolved valid session for {}",
+        context.user.email
+    );
 
     // 5. Login Proof: Wrong Password -> 401
     let wrong_pw_req = LoginRequest {
@@ -73,8 +91,13 @@ async fn run_proof() -> anyhow::Result<()> {
         captcha_token: "dev-pass".to_string(),
     };
     match service.login(wrong_pw_req).await {
-        Err(e) if e.to_string().contains("Invalid credentials") => println!("[PASS] Login: Wrong password returns 401 equivalent"),
-        other => anyhow::bail!("LOGIN PROOF FAILED: expected 401 equivalent for wrong password, got {:?}", other),
+        Err(e) if e.to_string().contains("Invalid credentials") => {
+            println!("[PASS] Login: Wrong password returns 401 equivalent")
+        }
+        other => anyhow::bail!(
+            "LOGIN PROOF FAILED: expected 401 equivalent for wrong password, got {:?}",
+            other
+        ),
     }
 
     // 6. Login Proof: Invalid Captcha -> 400
@@ -84,8 +107,13 @@ async fn run_proof() -> anyhow::Result<()> {
         captcha_token: "bad".to_string(),
     };
     match service.login(bad_captcha_req).await {
-        Err(e) if e.to_string().contains("Invalid captcha") => println!("[PASS] Login: Invalid captcha returns 400 equivalent"),
-        other => anyhow::bail!("LOGIN PROOF FAILED: expected 400 equivalent for invalid captcha, got {:?}", other),
+        Err(e) if e.to_string().contains("Invalid captcha") => {
+            println!("[PASS] Login: Invalid captcha returns 400 equivalent")
+        }
+        other => anyhow::bail!(
+            "LOGIN PROOF FAILED: expected 400 equivalent for invalid captcha, got {:?}",
+            other
+        ),
     }
 
     // 7. CSRF Proof
@@ -108,7 +136,10 @@ async fn run_proof() -> anyhow::Result<()> {
     for i in 1..=5 {
         let allowed = SlidingWindowLimiter::is_allowed(&mut *conn, &key, 3, 10).await?;
         if i > 3 && allowed {
-            anyhow::bail!("LIMITER PROOF FAILED: allowed request {} after limit of 3!", i);
+            anyhow::bail!(
+                "LIMITER PROOF FAILED: allowed request {} after limit of 3!",
+                i
+            );
         }
     }
     println!("[PASS] Rate Limiter: Blocked after 3 requests.");

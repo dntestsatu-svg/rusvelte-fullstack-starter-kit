@@ -1,38 +1,39 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
-use axum_extra::extract::CookieJar;
-use axum_extra::extract::cookie::{Cookie, SameSite};
-use std::sync::Arc;
-use crate::modules::auth::application::service::AuthService;
 use crate::modules::auth::application::dto::{LoginRequest, SessionContext};
-use crate::infrastructure::security::csrf::generate_csrf_token;
+use crate::modules::auth::application::service::AuthService;
+use axum::{extract::State, http::StatusCode, Json};
+use axum_extra::extract::cookie::{Cookie, SameSite};
+use axum_extra::extract::CookieJar;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub async fn login(
     State(service): State<Arc<AuthService>>,
     jar: CookieJar,
     Json(payload): Json<LoginRequest>,
-) -> Result<(CookieJar, Json<crate::modules::auth::application::dto::LoginResponse>), (StatusCode, String)> {
-    let res = service.login(payload).await.map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    
-    // Find the session_id from the logic - I need to adjust LoginResponse to include session_id 
-    // OR just fetch it from the service state if it returns it. 
-    // Actually, I'll modify LoginResponse to carry it for a moment or just make Login return (Response, Uuid)
-    
-    // For now, I'll re-resolve it or just trust the service to return it.
-    // Let's assume the service login returns it. I'll fix dto.rs and service.rs to return session_id.
-    
-    // Wait, let's just make the service return (LoginResponse, Uuid)
-    Ok((jar, Json(res)))
-}
+) -> Result<
+    (
+        CookieJar,
+        Json<crate::modules::auth::application::dto::LoginResponse>,
+    ),
+    (StatusCode, String),
+> {
+    let res = service
+        .login(payload)
+        .await
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
-// I'll fix service.rs to return session_id in LoginResponse.
-// Actually, I'll just write the handlers assuming the service is updated.
-// I'll update dto and service in a moment.
+    let mut session_cookie = Cookie::new("session_id", res.session_id.to_string());
+    session_cookie.set_http_only(true);
+    session_cookie.set_same_site(SameSite::Lax);
+    session_cookie.set_path("/");
+
+    let mut csrf_cookie = Cookie::new("XSRF-TOKEN", res.csrf_token.clone());
+    csrf_cookie.set_http_only(false);
+    csrf_cookie.set_same_site(SameSite::Lax);
+    csrf_cookie.set_path("/");
+
+    Ok((jar.add(session_cookie).add(csrf_cookie), Json(res)))
+}
 
 pub async fn logout(
     State(service): State<Arc<AuthService>>,
@@ -43,26 +44,38 @@ pub async fn logout(
             let _ = service.logout(id).await;
         }
     }
-    
-    let mut cookie = Cookie::from("session_id");
-    cookie.set_path("/");
-    cookie.set_http_only(true);
-    cookie.set_max_age(time::Duration::ZERO);
-    
-    Ok(jar.remove(cookie))
+
+    let mut session_cookie = Cookie::from("session_id");
+    session_cookie.set_path("/");
+    session_cookie.set_http_only(true);
+    session_cookie.set_same_site(SameSite::Lax);
+    session_cookie.set_max_age(time::Duration::ZERO);
+
+    let mut csrf_cookie = Cookie::from("XSRF-TOKEN");
+    csrf_cookie.set_path("/");
+    csrf_cookie.set_same_site(SameSite::Lax);
+    csrf_cookie.set_max_age(time::Duration::ZERO);
+
+    Ok(jar.remove(session_cookie).remove(csrf_cookie))
 }
 
 pub async fn me(
-    axum::extract::Extension(ctx): axum::extract::Extension<SessionContext>,
-) -> Json<crate::modules::auth::application::dto::UserProfile> {
-    Json(ctx.user)
+    ctx: Option<axum::extract::Extension<SessionContext>>,
+) -> Result<Json<crate::modules::auth::application::dto::UserProfile>, (StatusCode, String)> {
+    match ctx {
+        Some(axum::extract::Extension(c)) => Ok(Json(c.user)),
+        None => Err((StatusCode::UNAUTHORIZED, "Session required".to_string())),
+    }
 }
 
 pub async fn get_csrf(
-    axum::extract::Extension(ctx): axum::extract::Extension<SessionContext>,
-) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ 
-        "status": "ok",
-        "csrf_token": ctx.csrf_token 
-    }))
+    ctx: Option<axum::extract::Extension<SessionContext>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    match ctx {
+        Some(axum::extract::Extension(c)) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "csrf_token": c.csrf_token
+        }))),
+        None => Err((StatusCode::UNAUTHORIZED, "Session required".to_string())),
+    }
 }

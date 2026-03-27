@@ -1,19 +1,39 @@
 <script lang="ts">
-	import { Menu, X, Bell, User, LayoutDashboard, Store, Users, Settings, LogOut } from "@lucide/svelte";
+	import type { Snippet } from 'svelte';
+	import { Menu, User, LayoutDashboard, Store, Users, MessageSquare } from "@lucide/svelte";
 	import * as Sheet from "$lib/components/ui/sheet/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import ThemeToggle from "../components/ThemeToggle.svelte";
 	import NotificationBell from "$lib/components/ui/NotificationBell.svelte";
+	import type { AuthUser } from "../api/auth";
 
-	let { children } = $props();
+	let { children, sessionUser } = $props<{
+		children: Snippet;
+		sessionUser: AuthUser;
+	}>();
 	let isSidebarOpen = $state(true);
 
-	const navItems = [
+	const baseNavItems = [
 		{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-		{ name: "Stores", href: "/dashboard/stores", icon: Store },
-		{ name: "Users", href: "/dashboard/users", icon: Users },
-		{ name: "Settings", href: "/dashboard/settings", icon: Settings }
+		{ name: "Stores", href: "/dashboard/stores", icon: Store }
 	];
+
+	// Derive navItems based on user role
+	let navItems = $derived.by(() => {
+		const items = [...baseNavItems];
+		
+		if (sessionUser && (sessionUser.role === 'dev' || sessionUser.role === 'superadmin' || sessionUser.role === 'admin')) {
+			const usersItem = { name: "Users", href: "/dashboard/users", icon: Users };
+			// Insert Users after Stores (index 1)
+			items.splice(2, 0, usersItem);
+		}
+
+		if (sessionUser && (sessionUser.role === 'dev' || sessionUser.role === 'superadmin')) {
+			items.push({ name: "Support Inbox", href: "/dashboard/inbox", icon: MessageSquare });
+		}
+		
+		return items;
+	});
 
 	function toggleSidebar() {
 		isSidebarOpen = !isSidebarOpen;

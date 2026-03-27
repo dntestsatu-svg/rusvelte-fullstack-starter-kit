@@ -13,19 +13,85 @@ impl Container {
         info!("Building application container...");
 
         let config = Config::from_env()?;
-        
+
         let db = init_db_pool(&config.database_url).await?;
         let redis = init_redis_pool(&config.redis_url).await?;
 
-        let repo = Arc::new(crate::modules::auth::infrastructure::persistence::PostgresAuthRepository::new(db.clone()));
-        let captcha = Arc::new(crate::infrastructure::security::captcha::NoOpCaptchaVerifier);
-        let auth_service = Arc::new(crate::modules::auth::application::service::AuthService::new(repo, captcha, redis.clone()));
+        let repo = Arc::new(
+            crate::modules::auth::infrastructure::persistence::PostgresAuthRepository::new(
+                db.clone(),
+            ),
+        );
+        let captcha: Arc<dyn crate::infrastructure::security::captcha::CaptchaVerifier> =
+            Arc::new(crate::infrastructure::security::captcha::NoOpCaptchaVerifier);
+        let auth_service = Arc::new(
+            crate::modules::auth::application::service::AuthService::new(
+                repo,
+                captcha.clone(),
+                redis.clone(),
+            ),
+        );
+
+        let support_repo =
+            crate::modules::support::infrastructure::repository::SupportRepository::new(db.clone());
+        let support_service = Arc::new(
+            crate::modules::support::application::service::SupportService::new(
+                support_repo,
+                captcha.clone(),
+            ),
+        );
+
+        let user_repo = Arc::new(
+            crate::modules::users::infrastructure::repository::SqlxUserRepository::new(db.clone()),
+        );
+        let audit_repo = Arc::new(crate::infrastructure::audit::SqlxAuditLogRepository::new(
+            db.clone(),
+        ));
+        let user_service = Arc::new(
+            crate::modules::users::application::service::UserService::new(
+                user_repo.clone(),
+                audit_repo,
+            ),
+        );
+        let store_repo = Arc::new(
+            crate::modules::stores::infrastructure::repository::SqlxStoreRepository::new(
+                db.clone(),
+            ),
+        );
+        let store_audit_repo = Arc::new(crate::infrastructure::audit::SqlxAuditLogRepository::new(
+            db.clone(),
+        ));
+        let store_service = Arc::new(
+            crate::modules::stores::application::service::StoreService::new(
+                store_repo,
+                user_repo,
+                store_audit_repo,
+            ),
+        );
+        let store_token_repo = Arc::new(
+            crate::modules::store_tokens::infrastructure::repository::SqlxStoreTokenRepository::new(
+                db.clone(),
+            ),
+        );
+        let store_token_audit_repo = Arc::new(
+            crate::infrastructure::audit::SqlxAuditLogRepository::new(db.clone()),
+        );
+        let store_token_service = Arc::new(
+            crate::modules::store_tokens::application::service::StoreTokenService::new(
+                store_token_repo,
+                store_token_audit_repo,
+            ),
+        );
 
         let state = Arc::new(AppState {
             config,
             db,
             redis,
             auth_service,
+            store_service,
+            store_token_service,
+            support_service,
+            user_service,
         });
 
         info!("Application container built successfully.");

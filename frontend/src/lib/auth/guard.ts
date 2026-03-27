@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { redirect } from '@sveltejs/kit';
+import { goto } from '$app/navigation';
 import { authStore } from './store.js';
 
 /**
@@ -8,11 +8,8 @@ import { authStore } from './store.js';
  */
 export function protectRoute(url: URL) {
 	const state = get(authStore);
-
-	// In a real app, we might check if (state.isLoading) and return early
-	// but for this issue, we assume the store is seeded or loading is handled.
 	
 	if (!state.isAuthenticated && url.pathname.startsWith('/dashboard')) {
-		throw redirect(303, '/login');
+		void goto('/login');
 	}
 }

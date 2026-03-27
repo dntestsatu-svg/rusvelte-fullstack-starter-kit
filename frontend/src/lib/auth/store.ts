@@ -2,8 +2,10 @@ import { writable } from 'svelte/store';
 
 export interface User {
 	id: string;
+	name: string;
 	email: string;
-	role: 'admin' | 'merchant' | 'user';
+	role: 'admin' | 'user' | 'dev' | 'superadmin';
+	status: 'active' | 'inactive' | 'suspended';
 }
 
 export interface AuthState {
@@ -16,7 +18,7 @@ function createAuthStore() {
 	const { subscribe, set, update } = writable<AuthState>({
 		user: null,
 		isAuthenticated: false,
-		isLoading: true
+		isLoading: false
 	});
 
 	return {
@@ -42,3 +44,6 @@ function createAuthStore() {
 }
 
 export const authStore = createAuthStore();
+
+import { derived } from 'svelte/store';
+export const user = derived(authStore, $s => $s.user);

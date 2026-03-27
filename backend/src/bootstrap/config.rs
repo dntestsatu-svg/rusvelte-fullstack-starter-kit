@@ -1,5 +1,4 @@
 use crate::shared::error::AppError;
-use dotenvy::dotenv;
 use std::env;
 
 #[derive(Clone, Debug)]
@@ -16,10 +15,23 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, AppError> {
-        dotenv().ok();
+        // Load .env from workspace root stably
+        if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
+            let root_env = std::path::PathBuf::from(manifest_dir)
+                .parent()
+                .map(|p| p.join(".env"));
+
+            if let Some(path) = root_env {
+                dotenvy::from_path(path).ok();
+            }
+        } else {
+            dotenvy::dotenv().ok();
+        }
 
         Ok(Self {
-            port: get_env("PORT")?.parse().map_err(|_| AppError::Config("PORT must be a number".into()))?,
+            port: get_env("PORT")?
+                .parse()
+                .map_err(|_| AppError::Config("PORT must be a number".into()))?,
             database_url: get_env("DATABASE_URL")?,
             redis_url: get_env("REDIS_URL")?,
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".into()),

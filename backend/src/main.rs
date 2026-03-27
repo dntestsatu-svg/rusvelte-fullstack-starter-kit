@@ -1,15 +1,10 @@
-pub mod bootstrap;
-pub mod infrastructure;
-pub mod modules;
-pub mod router;
-pub mod shared;
-
-use crate::bootstrap::container::Container;
-use crate::router::create_router;
-use crate::shared::tracing::init_tracing;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing::info;
+
+use backend::bootstrap::container::Container;
+use backend::router::create_router;
+use backend::shared::tracing::init_tracing;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -27,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     // Define address
     let addr = SocketAddr::from(([0, 0, 0, 0], state.config.port));
     let listener = TcpListener::bind(addr).await?;
-    
+
     info!("Server listening on {}", addr);
 
     // Run server with graceful shutdown

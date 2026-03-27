@@ -84,7 +84,7 @@ mod tests {
     fn test_percentage_fee() {
         assert_eq!(percentage_fee(100_000, 300), 3_000);
         assert_eq!(percentage_fee(1_000_000, 1200), 120_000);
-        assert_eq!(percentage_fee(50, 1200), 6); 
+        assert_eq!(percentage_fee(50, 1200), 6);
     }
 
     #[test]
@@ -105,19 +105,28 @@ mod tests {
     #[test]
     fn test_payout_guards() {
         let b = withdraw_breakdown(1_000_000, 5_000);
-        
+
         // Success
         assert!(validate_payout_guard(&b, 1_000_000).is_ok());
-        
+
         // Exceeds balance
-        assert_eq!(validate_payout_guard(&b, 500_000), Err(MoneyError::ExceedsBalance));
-        
+        assert_eq!(
+            validate_payout_guard(&b, 500_000),
+            Err(MoneyError::ExceedsBalance)
+        );
+
         // Invalid amount
         let b_zero = withdraw_breakdown(0, 5_000);
-        assert_eq!(validate_payout_guard(&b_zero, 1_000_000), Err(MoneyError::InvalidAmount));
-        
+        assert_eq!(
+            validate_payout_guard(&b_zero, 1_000_000),
+            Err(MoneyError::InvalidAmount)
+        );
+
         // Negative net (fees exceed requested)
-        let b_small = withdraw_breakdown(10_000, 15_000); 
-        assert_eq!(validate_payout_guard(&b_small, 100_000), Err(MoneyError::NegativeNet));
+        let b_small = withdraw_breakdown(10_000, 15_000);
+        assert_eq!(
+            validate_payout_guard(&b_small, 100_000),
+            Err(MoneyError::NegativeNet)
+        );
     }
 }

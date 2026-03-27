@@ -6,6 +6,12 @@
 		description = "This action cannot be undone.",
 		onConfirm = () => {},
 		onCancel = () => {}
+	}: {
+		open?: boolean;
+		title?: string;
+		description?: string;
+		onConfirm?: () => void;
+		onCancel?: () => void;
 	} = $props();
 </script>
 
@@ -18,8 +24,8 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel onclick={onCancel}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={onConfirm}>Confirm</AlertDialog.Action>
+			<AlertDialog.Cancel onclick={() => onCancel()}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={() => onConfirm()}>Confirm</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
