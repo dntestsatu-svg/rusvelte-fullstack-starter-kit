@@ -68,7 +68,10 @@ fn should_deliver(
     }
 
     if let Some(store_id) = envelope.store_id {
-        return has_capability(actor, Capability::PaymentRead, Some(store_id));
+        return match envelope.event_type.as_str() {
+            "store.balance.updated" => has_capability(actor, Capability::BalanceRead, Some(store_id)),
+            _ => has_capability(actor, Capability::PaymentRead, Some(store_id)),
+        };
     }
 
     false

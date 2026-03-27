@@ -33,6 +33,8 @@ use backend::modules::payments::application::service::PaymentService;
 use backend::modules::payments::domain::entity::PAYMENT_PROVIDER_NAME;
 use backend::modules::payments::infrastructure::repository::SqlxPaymentRepository;
 use backend::modules::realtime::application::service::RealtimeService;
+use backend::modules::settlements::application::service::SettlementService;
+use backend::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
 use backend::modules::store_tokens::application::service::StoreTokenService;
 use backend::modules::store_tokens::domain::entity::{NewStoreApiTokenRecord, StoreApiTokenRecord};
 use backend::modules::store_tokens::domain::repository::StoreTokenRepository;
@@ -278,6 +280,9 @@ async fn build_harness() -> TestHarness {
         Arc::new(PaymentIdempotencyService::new(payment_repository));
     let notification_service = Arc::new(NotificationService::new(notification_repository));
     let realtime_service = Arc::new(RealtimeService::new(256));
+    let settlement_service = Arc::new(SettlementService::new(Arc::new(
+        SqlxSettlementRepository::new(db.clone()),
+    )));
 
     let state = AppState {
         config,
@@ -289,6 +294,7 @@ async fn build_harness() -> TestHarness {
         payment_idempotency_service,
         payment_service,
         realtime_service,
+        settlement_service,
         store_service,
         store_token_service,
         support_service,

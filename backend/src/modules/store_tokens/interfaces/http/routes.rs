@@ -58,6 +58,8 @@ mod tests {
     use crate::modules::payments::application::service::PaymentService;
     use crate::modules::notifications::application::service::NotificationService;
     use crate::modules::realtime::application::service::RealtimeService;
+    use crate::modules::settlements::application::service::SettlementService;
+    use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
     use crate::modules::store_tokens::application::service::StoreTokenService;
     use crate::modules::store_tokens::domain::entity::{
         NewStoreApiTokenRecord, StoreApiTokenRecord,
@@ -536,6 +538,9 @@ mod tests {
         let balance_service = Arc::new(StoreBalanceService::new(Arc::new(
             NoopStoreBalanceRepository,
         )));
+        let settlement_service = Arc::new(SettlementService::new(Arc::new(
+            SqlxSettlementRepository::new(db.clone()),
+        )));
 
         let state = AppState {
             config: Config {
@@ -557,6 +562,7 @@ mod tests {
             payment_idempotency_service,
             payment_service,
             realtime_service,
+            settlement_service,
             store_service,
             store_token_service,
             support_service,

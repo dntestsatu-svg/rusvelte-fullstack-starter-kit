@@ -49,6 +49,9 @@ export function startRealtimeBridge(options: RealtimeBridgeOptions): () => void 
 		source.addEventListener('notification.created', (event) => {
 			void handleRealtimeEvent('notification.created', event);
 		});
+		source.addEventListener('store.balance.updated', (event) => {
+			void handleRealtimeEvent('store.balance.updated', event);
+		});
 		source.onerror = () => {
 			source?.close();
 			if (disposed) {

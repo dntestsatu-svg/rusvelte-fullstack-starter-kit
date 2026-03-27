@@ -528,6 +528,9 @@ mod tests {
         timeout: Duration,
     ) -> (QrisOtomatisProvider, TestProviderState) {
         let addr = spawn_provider_server(state.clone()).await;
+        // Give the spawned mock server a brief moment to start accepting requests before
+        // tests use very small client timeouts.
+        tokio::time::sleep(Duration::from_millis(25)).await;
         let provider = QrisOtomatisProvider::new(QrisOtomatisConfig {
             base_url: reqwest::Url::parse(&format!("http://{addr}/")).unwrap(),
             merchant_uuid: "merchant-uuid".into(),

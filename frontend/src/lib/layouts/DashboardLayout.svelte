@@ -1,41 +1,43 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Menu, User, LayoutDashboard, Store, Users, MessageSquare, CreditCard } from "@lucide/svelte";
+	import {
+		Menu,
+		User,
+		LayoutDashboard,
+		Store,
+		Users,
+		MessageSquare,
+		CreditCard,
+		Landmark
+	} from "@lucide/svelte";
 	import * as Sheet from "$lib/components/ui/sheet/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import ThemeToggle from "../components/ThemeToggle.svelte";
 	import NotificationBell from "$lib/components/ui/NotificationBell.svelte";
 	import RealtimeBridge from "$lib/realtime/RealtimeBridge.svelte";
 	import type { AuthUser } from "../api/auth";
+	import { buildDashboardNav, type DashboardNavItem } from '$lib/layouts/dashboard-nav';
 
 	let { children, sessionUser } = $props<{
 		children: Snippet;
 		sessionUser: AuthUser;
 	}>();
 	let isSidebarOpen = $state(true);
+	const iconMap: Record<DashboardNavItem['id'], typeof LayoutDashboard> = {
+		dashboard: LayoutDashboard,
+		stores: Store,
+		payments: CreditCard,
+		users: Users,
+		settlements: Landmark,
+		inbox: MessageSquare
+	};
 
-	const baseNavItems = [
-		{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-		{ name: "Stores", href: "/dashboard/stores", icon: Store },
-		{ name: "Payments", href: "/dashboard/payments", icon: CreditCard }
-	];
-
-	// Derive navItems based on user role
-	let navItems = $derived.by(() => {
-		const items = [...baseNavItems];
-		
-		if (sessionUser && (sessionUser.role === 'dev' || sessionUser.role === 'superadmin' || sessionUser.role === 'admin')) {
-			const usersItem = { name: "Users", href: "/dashboard/users", icon: Users };
-			// Insert Users after Stores (index 1)
-			items.splice(2, 0, usersItem);
-		}
-
-		if (sessionUser && (sessionUser.role === 'dev' || sessionUser.role === 'superadmin')) {
-			items.push({ name: "Support Inbox", href: "/dashboard/inbox", icon: MessageSquare });
-		}
-		
-		return items;
-	});
+	let navItems = $derived.by(() =>
+		buildDashboardNav(sessionUser?.role).map((item) => ({
+			...item,
+			icon: iconMap[item.id]
+		}))
+	);
 
 	function toggleSidebar() {
 		isSidebarOpen = !isSidebarOpen;

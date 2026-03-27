@@ -47,7 +47,11 @@ pub fn create_router(state: SharedState) -> Router {
         ));
 
     let protected_api_routes = Router::new()
-        .nest("/dev", balances::dev_routes(inner_state.clone()))
+        .nest(
+            "/dev",
+            balances::dev_routes(inner_state.clone())
+                .merge(crate::modules::settlements::routes(inner_state.clone())),
+        )
         .nest(
             "/notifications",
             crate::modules::notifications::routes(inner_state.clone()),

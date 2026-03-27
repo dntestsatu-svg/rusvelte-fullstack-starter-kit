@@ -2,7 +2,10 @@ import type { QueryClient } from '@tanstack/svelte-query';
 
 import { balanceQueryKeys, notificationQueryKeys, paymentQueryKeys } from './query-keys';
 
-export type RealtimeEventName = 'payment.updated' | 'notification.created';
+export type RealtimeEventName =
+	| 'payment.updated'
+	| 'notification.created'
+	| 'store.balance.updated';
 
 export interface RealtimeEventPayload {
 	type: RealtimeEventName;
@@ -26,5 +29,10 @@ export async function invalidateRealtimeQueries(
 
 	if (event.type === 'notification.created') {
 		await queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+		return;
+	}
+
+	if (event.type === 'store.balance.updated') {
+		await queryClient.invalidateQueries({ queryKey: balanceQueryKeys.all });
 	}
 }

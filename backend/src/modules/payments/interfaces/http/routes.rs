@@ -92,6 +92,8 @@ mod tests {
     };
     use crate::modules::notifications::application::service::NotificationService;
     use crate::modules::realtime::application::service::RealtimeService;
+    use crate::modules::settlements::application::service::SettlementService;
+    use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
     use crate::modules::payments::domain::repository::{
         PaymentIdempotencyRepository, PaymentRepository,
     };
@@ -828,6 +830,9 @@ mod tests {
             ),
         )));
         let realtime_service = Arc::new(RealtimeService::new(64));
+        let settlement_service = Arc::new(SettlementService::new(Arc::new(
+            SqlxSettlementRepository::new(db.clone()),
+        )));
 
         let state = AppState {
             config: Config {
@@ -849,6 +854,7 @@ mod tests {
             payment_idempotency_service,
             payment_service,
             realtime_service,
+            settlement_service,
             store_service,
             store_token_service: store_token_service.clone(),
             support_service,

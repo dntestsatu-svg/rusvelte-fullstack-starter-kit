@@ -37,4 +37,16 @@ describe('invalidateRealtimeQueries', () => {
 		expect(invalidateQueries).toHaveBeenCalledTimes(1);
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['notifications'] });
 	});
+
+	it('invalidates balance queries for store balance updates', async () => {
+		const invalidateQueries = vi.fn().mockResolvedValue(undefined);
+
+		await invalidateRealtimeQueries(
+			{ invalidateQueries } as unknown as Parameters<typeof invalidateRealtimeQueries>[0],
+			{ type: 'store.balance.updated', data: { store_id: 'store-1' } }
+		);
+
+		expect(invalidateQueries).toHaveBeenCalledTimes(1);
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['balances'] });
+	});
 });

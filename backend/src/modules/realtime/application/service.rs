@@ -47,6 +47,28 @@ impl RealtimeService {
         });
     }
 
+    pub fn publish_store_balance_updated(
+        &self,
+        store_id: Uuid,
+        settlement_id: Uuid,
+        pending_balance: i64,
+        settled_balance: i64,
+        withdrawable_balance: i64,
+    ) {
+        let _ = self.sender.send(RealtimeEventEnvelope {
+            event_type: "store.balance.updated".into(),
+            payload: serde_json::json!({
+                "store_id": store_id,
+                "settlement_id": settlement_id,
+                "pending_balance": pending_balance,
+                "settled_balance": settled_balance,
+                "withdrawable_balance": withdrawable_balance,
+            }),
+            target_user_ids: vec![],
+            store_id: Some(store_id),
+        });
+    }
+
     pub fn publish_notification_created(
         &self,
         target_user_ids: Vec<Uuid>,

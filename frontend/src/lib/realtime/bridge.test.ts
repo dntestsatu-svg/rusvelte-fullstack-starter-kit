@@ -71,10 +71,11 @@ describe('startRealtimeBridge', () => {
 
 		source.emit('payment.updated', '{"payment_id":"payment-1"}');
 		source.emit('notification.created', '{"related_id":"notification-1"}');
+		source.emit('store.balance.updated', '{"store_id":"store-1"}');
 
 		await Promise.resolve();
 
-		expect(onEvent).toHaveBeenCalledTimes(2);
+		expect(onEvent).toHaveBeenCalledTimes(3);
 		expect(onEvent).toHaveBeenNthCalledWith(
 			1,
 			'payment.updated',
@@ -84,6 +85,11 @@ describe('startRealtimeBridge', () => {
 			2,
 			'notification.created',
 			expect.objectContaining({ data: '{"related_id":"notification-1"}' })
+		);
+		expect(onEvent).toHaveBeenNthCalledWith(
+			3,
+			'store.balance.updated',
+			expect.objectContaining({ data: '{"store_id":"store-1"}' })
 		);
 
 		dispose();

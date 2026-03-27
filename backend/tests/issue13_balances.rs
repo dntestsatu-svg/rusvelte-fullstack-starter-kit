@@ -32,6 +32,8 @@ use backend::modules::payments::domain::entity::{
 };
 use backend::modules::payments::infrastructure::repository::SqlxPaymentRepository;
 use backend::modules::realtime::application::service::RealtimeService;
+use backend::modules::settlements::application::service::SettlementService;
+use backend::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
 use backend::modules::store_tokens::application::service::StoreTokenService;
 use backend::modules::store_tokens::domain::entity::{NewStoreApiTokenRecord, StoreApiTokenRecord};
 use backend::modules::store_tokens::domain::repository::StoreTokenRepository;
@@ -233,6 +235,9 @@ async fn build_harness(provider: Arc<dyn PaymentProviderGateway>) -> TestHarness
     let payment_idempotency_service = Arc::new(PaymentIdempotencyService::new(payment_repository));
     let notification_service = Arc::new(backend::modules::notifications::application::service::NotificationService::new(notification_repository));
     let realtime_service = Arc::new(RealtimeService::new(64));
+    let settlement_service = Arc::new(SettlementService::new(Arc::new(
+        SqlxSettlementRepository::new(db.clone()),
+    )));
     let support_service = Arc::new(SupportService::new(
         SupportRepository::new(db.clone()),
         Arc::new(NoOpCaptchaVerifier),
@@ -252,6 +257,7 @@ async fn build_harness(provider: Arc<dyn PaymentProviderGateway>) -> TestHarness
         payment_idempotency_service,
         payment_service,
         realtime_service,
+        settlement_service,
         store_service,
         store_token_service,
         support_service,

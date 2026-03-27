@@ -10,6 +10,8 @@ use crate::modules::notifications::application::service::NotificationService;
 use crate::modules::payments::application::idempotency::PaymentIdempotencyService;
 use crate::modules::payments::application::service::PaymentService;
 use crate::modules::realtime::application::service::RealtimeService;
+use crate::modules::settlements::application::service::SettlementService;
+use crate::modules::settlements::infrastructure::repository::SqlxSettlementRepository;
 use crate::shared::error::AppError;
 use std::sync::Arc;
 use tracing::info;
@@ -114,6 +116,9 @@ impl Container {
             Arc::new(PaymentIdempotencyService::new(payment_repository));
         let notification_service = Arc::new(NotificationService::new(notification_repository));
         let realtime_service = Arc::new(RealtimeService::new(256));
+        let settlement_repository =
+            Arc::new(SqlxSettlementRepository::new(db.clone()));
+        let settlement_service = Arc::new(SettlementService::new(settlement_repository));
 
         let state = Arc::new(AppState {
             config,
@@ -125,6 +130,7 @@ impl Container {
             payment_idempotency_service,
             payment_service,
             realtime_service,
+            settlement_service,
             store_service,
             store_token_service,
             support_service,
